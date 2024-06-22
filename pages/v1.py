@@ -1,40 +1,53 @@
 import streamlit as st
-from PIL import Image
-import requests
-from transformers import AutoProcessor, AutoModel
+from huggingface_hub import login
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
 @st.cache_resource
 def load_model():
-    processor = AutoProcessor.from_pretrained("microsoft/florence-2-large", trust_remote_code=True)
-    model = AutoModel.from_pretrained("microsoft/florence-2-large", trust_remote_code=True)
-    return processor, model
+    token = st.secrets["HUGGING_FACE_HUB_TOKEN"]
+    login(token=token)
+    
+    model_name = "meta-llama/Meta-Llama-3-8B"
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
+    return tokenizer, model
 
-def process_image_and_text(image, text, processor, model):
-    inputs = processor(images=image, text=text, return_tensors="pt")
+def generate_response(prompt, tokenizer, model):
+    inputs = tokenizer(prompt, return_tensors="pt")
     with torch.no_grad():
-        outputs = model(**inputs)
-    return outputs.text_embeds, outputs.image_embeds
+        outputs = model.generate(**inputs, max_length=100, num_return_sequences=1)
+    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return response
 
-st.title("Florence-2-large Image Q&A")
-st.write("Upload an image and ask a question about it!")
+st.title("Meta-Llama-3-8B Chatbot")
 
-processor, model = load_model()
+try:
+    tokenizer, model = load_model()
+except Exception as e:
+    st.error(f"Error loading the model: {str(e)}")
+    st.stop()
 
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
-question = st.text_input("Ask a question about the image:")
+# Initialize chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    st.image(image, caption='Uploaded Image.', use_column_width=True)
+# Display chat messages from history on app rerun
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    if question and st.button("Get Answer"):
-        text_embeds, image_embeds = process_image_and_text(image, question, processor, model)
-        
-        # Calculate similarity between text and image embeddings
-        similarity = torch.nn.functional.cosine_similarity(text_embeds, image_embeds)
-        
-        st.write(f"Similarity score: {similarity.item():.4f}")
-        st.write("Note: This score indicates how well the question relates to the image content. Higher scores suggest the question is more relevant to the image.")
+# React to user input
+if prompt := st.chat_input("What is your question?"):
+    # Display user message in chat message container
+    st.chat_message("user").markdown(prompt)
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
-st.write("Please note: This app doesn't generate textual answers. It calculates a similarity score between the question and the image content.")
+    response = generate_response(prompt, tokenizer, model)
+    
+    # Display assistant response in chat message container
+    with st.chat_message("assistant"):
+        st.markdown(response)
+    # Add assistant response to chat history
+    st.session_state.messages.append({"role": "assistant", "content": response})
