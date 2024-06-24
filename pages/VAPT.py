@@ -10,7 +10,6 @@ import time
 import re
 import subprocess
 import json
-# Add these new imports for PDF generation
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -18,9 +17,15 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from io import BytesIO
 
+def is_valid_url(url):
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
+
 # [Your existing functions remain here]
 
-# Add this new function for PDF report generation
 def generate_pdf_report(scan_results):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -53,7 +58,6 @@ def generate_pdf_report(scan_results):
     buffer.seek(0)
     return buffer
 
-# Modify your main function to include the report generation
 def main():
     st.title("Advanced Web Vulnerability Assessment Tool")
     
