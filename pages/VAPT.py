@@ -24,7 +24,59 @@ def is_valid_url(url):
     except ValueError:
         return False
 
-# [Your existing functions remain here]
+def get_ip_from_url(url):
+    try:
+        domain = urlparse(url).netloc
+        return socket.gethostbyname(domain)
+    except socket.gaierror:
+        return None
+
+def scan_port(ip, port):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex((ip, port))
+            if result == 0:
+                return port
+    except:
+        pass
+    return None
+
+def scan_ports(ip, start_port, end_port):
+    open_ports = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+        future_to_port = {executor.submit(scan_port, ip, port): port for port in range(start_port, end_port + 1)}
+        for future in concurrent.futures.as_completed(future_to_port):
+            result = future.result()
+            if result:
+                open_ports.append(result)
+    return open_ports
+
+def check_http_headers(url):
+    try:
+        response = requests.head(url, timeout=5, allow_redirects=True)
+        return response.headers, response.url
+    except:
+        return None, None
+
+def check_ssl_tls(url):
+    try:
+        hostname = urlparse(url).netloc
+        context = ssl.create_default_context()
+        with socket.create_connection((hostname, 443)) as sock:
+            with context.wrap_socket(sock, server_hostname=hostname) as secure_sock:
+                cert = secure_sock.getpeercert()
+        
+        return {
+            "issuer": dict(x[0] for x in cert['issuer']),
+            "subject": dict(x[0] for x in cert['subject']),
+            "version": cert['version'],
+            "serialNumber": cert['serialNumber'],
+            "notBefore": cert['notBefore'],
+            "notAfter": cert['notAfter'],
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 def generate_pdf_report(scan_results):
     buffer = BytesIO()
@@ -43,7 +95,6 @@ def generate_pdf_report(scan_results):
     story.append(Spacer(1, 12))
 
     # Add other sections based on your scan results
-    # For example:
     if 'open_ports' in scan_results:
         story.append(Paragraph("Open Ports", styles['Heading2']))
         if scan_results['open_ports']:
@@ -95,10 +146,33 @@ def main():
             "vulnerabilities": {}
         }
 
-        # Your existing scanning code goes here
-        # Make sure to populate the scan_results dictionary with your findings
+        # Perform scans and populate scan_results
+        if scan_type == "Active":
+            with st.spinner("Scanning ports..."):
+                open_ports = scan_ports(ip_address, start_port, end_port)
+                scan_results["open_ports"] = open_ports
+                if open_ports:
+                    st.success(f"Open ports: {', '.join(map(str, open_ports))}")
+                else:
+                    st.info("No open ports found in the specified range.")
 
-        # After all scans are complete, generate the PDF report
+        with st.spinner("Checking HTTP headers..."):
+            headers, final_url = check_http_headers(target_url)
+            scan_results["http_headers"] = headers
+            if headers:
+                st.json(dict(headers))
+            else:
+                st.error("Unable to retrieve HTTP headers.")
+
+        with st.spinner("Performing SSL/TLS analysis..."):
+            ssl_info = check_ssl_tls(target_url)
+            scan_results["ssl_info"] = ssl_info
+            if "error" not in ssl_info:
+                st.json(ssl_info)
+            else:
+                st.error(f"Unable to perform SSL/TLS analysis: {ssl_info['error']}")
+
+        # Generate and offer PDF report for download
         pdf_buffer = generate_pdf_report(scan_results)
         st.download_button(
             label="Download PDF Report",
