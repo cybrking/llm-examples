@@ -37,8 +37,11 @@ def main():
         password = generate_password(length)
         st.success("Your generated password is:")
         st.code(password, language=None)
-        st.success("Copied to clipboard!")
 
+    if st.session_state.copied:
+            st.success("Copied to clipboard!")
+
+            
     st.write("Note: Always store your passwords securely and never share them with others.")
 
 if __name__ == "__main__":
