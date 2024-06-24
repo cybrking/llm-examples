@@ -1,15 +1,22 @@
 import streamlit as st
 import socket
-import ipaddress
 import concurrent.futures
 import requests
+from urllib.parse import urlparse
 
-def is_valid_ip(ip):
+def is_valid_url(url):
     try:
-        ipaddress.ip_address(ip)
-        return True
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
     except ValueError:
         return False
+
+def get_ip_from_url(url):
+    try:
+        domain = urlparse(url).netloc
+        return socket.gethostbyname(domain)
+    except socket.gaierror:
+        return None
 
 def scan_port(ip, port):
     try:
@@ -32,49 +39,59 @@ def scan_ports(ip, start_port, end_port):
                 open_ports.append(result)
     return open_ports
 
-def check_http_headers(ip, port):
+def check_http_headers(url):
     try:
-        response = requests.head(f"http://{ip}:{port}", timeout=2)
-        return response.headers
+        response = requests.head(url, timeout=5, allow_redirects=True)
+        return response.headers, response.url
     except:
-        return None
+        return None, None
 
 def main():
-    st.title("Basic Vulnerability Assessment and Penetration Testing Tool")
+    st.title("Basic Web Vulnerability Assessment Tool")
     
-    target_ip = st.text_input("Enter target IP address:")
+    target_url = st.text_input("Enter target URL (include http:// or https://):")
     
-    if not is_valid_ip(target_ip):
-        st.error("Please enter a valid IP address.")
+    if not is_valid_url(target_url):
+        st.error("Please enter a valid URL (e.g., https://example.com)")
         return
+
+    ip_address = get_ip_from_url(target_url)
+    if not ip_address:
+        st.error("Unable to resolve the domain. Please check the URL and try again.")
+        return
+
+    st.info(f"Resolved IP address: {ip_address}")
 
     start_port = st.number_input("Start Port", min_value=1, max_value=65535, value=1)
     end_port = st.number_input("End Port", min_value=1, max_value=65535, value=1000)
 
     if st.button("Start Scan"):
         with st.spinner("Scanning ports..."):
-            open_ports = scan_ports(target_ip, start_port, end_port)
+            open_ports = scan_ports(ip_address, start_port, end_port)
         
         if open_ports:
             st.success(f"Open ports: {', '.join(map(str, open_ports))}")
             
-            for port in open_ports:
-                st.write(f"Checking HTTP headers for port {port}...")
-                headers = check_http_headers(target_ip, port)
-                if headers:
-                    st.json(dict(headers))
-                    if 'Server' in headers:
-                        st.warning(f"Server software disclosed: {headers['Server']}")
-                    if not headers.get('X-Frame-Options'):
-                        st.warning("X-Frame-Options header missing. Potential clickjacking vulnerability.")
-                    if not headers.get('Strict-Transport-Security'):
-                        st.warning("HSTS header missing. Potential downgrade attacks possible.")
-                else:
-                    st.info(f"No HTTP service detected on port {port}")
+            st.write("Checking HTTP headers...")
+            headers, final_url = check_http_headers(target_url)
+            if headers:
+                st.json(dict(headers))
+                if final_url != target_url:
+                    st.warning(f"Redirected to: {final_url}")
+                if 'Server' in headers:
+                    st.warning(f"Server software disclosed: {headers['Server']}")
+                if not headers.get('X-Frame-Options'):
+                    st.warning("X-Frame-Options header missing. Potential clickjacking vulnerability.")
+                if not headers.get('Strict-Transport-Security'):
+                    st.warning("HSTS header missing. Potential downgrade attacks possible.")
+                if headers.get('X-Powered-By'):
+                    st.warning(f"X-Powered-By header discloses: {headers['X-Powered-By']}")
+            else:
+                st.info("Unable to retrieve HTTP headers.")
         else:
             st.info("No open ports found in the specified range.")
 
-    st.warning("Note: This tool is for educational purposes only. Always obtain explicit permission before scanning any network or system you do not own.")
+    st.warning("Note: This tool is for educational purposes only. Always obtain explicit permission before scanning any website or system you do not own.")
 
 if __name__ == "__main__":
     main()
