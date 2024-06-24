@@ -4,18 +4,36 @@ from urllib.parse import urlparse
 import ipaddress
 import pandas as pd
 
-def is_valid_url_or_ip(input_string):
+def is_valid_input(input_string):
+    # Check if it's a valid URL
     try:
         result = urlparse(input_string)
-        return all([result.scheme, result.netloc])
+        if all([result.scheme, result.netloc]):
+            return True, "url"
     except ValueError:
         pass
     
+    # Check if it's a valid IP address
     try:
         ipaddress.ip_address(input_string)
-        return True
+        return True, "ip"
     except ValueError:
-        return False
+        pass
+    
+    # Check if it's a domain name without scheme
+    if '.' in input_string and ' ' not in input_string:
+        return True, "domain"
+    
+    return False, None
+
+def format_url(input_string, input_type):
+    if input_type == "url":
+        return input_string
+    elif input_type == "ip":
+        return f"http://{input_string}"
+    elif input_type == "domain":
+        return f"http://{input_string}"
+    return input_string
 
 def check_http_headers(url):
     try:
@@ -40,29 +58,29 @@ def perform_header_checks(headers):
 def main():
     st.title("HTTP Header Security Check Tool")
     
-    target = st.text_input("Enter target URL or IP address:", value="https://")
+    target = st.text_input("Enter target URL, IP address, or domain name:", value="")
     
     if not target:
-        st.warning("Please enter a URL or IP address to scan.")
+        st.warning("Please enter a URL, IP address, or domain name to scan.")
         return
 
-    if not is_valid_url_or_ip(target):
-        st.error("Please enter a valid URL (e.g., https://example.com) or IP address.")
+    is_valid, input_type = is_valid_input(target)
+    if not is_valid:
+        st.error("Please enter a valid URL, IP address, or domain name.")
         return
 
-    if ipaddress.ip_address(target.split('://')[-1]):
-        target = f"http://{target}"
+    formatted_target = format_url(target, input_type)
 
     if st.button("Check Headers"):
         st.write("## HTTP Header Analysis")
         
         with st.spinner("Checking HTTP headers..."):
-            headers, final_url = check_http_headers(target)
+            headers, final_url = check_http_headers(formatted_target)
             
             if headers:
                 st.success("Headers retrieved successfully!")
                 
-                if final_url != target:
+                if final_url != formatted_target:
                     st.warning(f"Redirected to: {final_url}")
                 
                 # Display all headers
