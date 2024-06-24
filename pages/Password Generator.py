@@ -31,7 +31,7 @@ def main():
     st.write("Generate a strong, complex password with alphanumeric and special characters.")
 
     # Password length slider
-    length = st.slider("Password Length", min_value=20, max_value=40, value=30)
+    length = st.slider("Password Length", min_value=20, max_value=32, value=20)
 
     if st.button("Generate Password"):
         password = generate_password(length)
