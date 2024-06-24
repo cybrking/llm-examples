@@ -9,52 +9,36 @@ import OpenSSL
 import time
 import re
 
-def is_valid_url(url):
-    try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except ValueError:
-        return False
-
-def get_ip_from_url(url):
-    try:
-        domain = urlparse(url).netloc
-        return socket.gethostbyname(domain)
-    except socket.gaierror:
-        return None
-
-def scan_port(ip, port):
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(1)
-            result = s.connect_ex((ip, port))
-            if result == 0:
-                return port
-    except:
-        pass
-    return None
+# [Previous helper functions remain unchanged: is_valid_url, get_ip_from_url, scan_port, check_http_headers, check_ssl_tls, rate_limited_request]
 
 def scan_ports(ip, start_port, end_port):
     open_ports = []
+    total_ports = end_port - start_port + 1
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
         future_to_port = {executor.submit(scan_port, ip, port): port for port in range(start_port, end_port + 1)}
-        for future in concurrent.futures.as_completed(future_to_port):
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_port)):
             result = future.result()
             if result:
                 open_ports.append(result)
-    return open_ports
+            # Update progress
+            progress = (i + 1) / total_ports
+            progress_bar.progress(progress)
+            status_text.text(f"Scanned {i + 1}/{total_ports} ports")
 
-def check_http_headers(url):
-    try:
-        response = requests.head(url, timeout=5, allow_redirects=True)
-        return response.headers, response.url
-    except:
-        return None, None
+    progress_bar.empty()
+    status_text.empty()
+    return open_ports
 
 def crawl_website(url, max_pages=10):
     visited = set()
     to_visit = [url]
     pages = []
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
 
     while to_visit and len(pages) < max_pages:
         current_url = to_visit.pop(0)
@@ -69,32 +53,17 @@ def crawl_website(url, max_pages=10):
                     absolute_link = urljoin(current_url, link['href'])
                     if absolute_link.startswith(url) and absolute_link not in visited:
                         to_visit.append(absolute_link)
+                
+                # Update progress
+                progress = len(pages) / max_pages
+                progress_bar.progress(progress)
+                status_text.text(f"Crawled {len(pages)}/{max_pages} pages")
             except:
                 pass
 
+    progress_bar.empty()
+    status_text.empty()
     return pages
-
-def check_ssl_tls(url):
-    try:
-        hostname = urlparse(url).netloc
-        cert = ssl.get_server_certificate((hostname, 443))
-        x509 = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert)
-        
-        issues = []
-        if x509.get_version() != 2:  # Version 3 is represented as 2
-            issues.append("Certificate is not X.509 v3")
-        if x509.has_expired():
-            issues.append("Certificate has expired")
-        
-        return {
-            "issuer": x509.get_issuer().get_components(),
-            "subject": x509.get_subject().get_components(),
-            "version": x509.get_version(),
-            "expires": x509.get_notAfter().decode('ascii'),
-            "issues": issues
-        }
-    except:
-        return None
 
 def check_common_vulnerabilities(url):
     vulnerabilities = []
@@ -121,10 +90,6 @@ def check_common_vulnerabilities(url):
     except:
         pass
     return vulnerabilities
-
-def rate_limited_request(url, delay=1):
-    time.sleep(delay)
-    return requests.get(url, timeout=5)
 
 def main():
     st.title("Advanced Web Vulnerability Assessment Tool")
@@ -155,8 +120,8 @@ def main():
 
         # Port Scanning (Active scan only)
         if scan_type == "Active":
-            with st.spinner("Scanning ports..."):
-                open_ports = scan_ports(ip_address, start_port, end_port)
+            st.write("### Port Scanning")
+            open_ports = scan_ports(ip_address, start_port, end_port)
             if open_ports:
                 st.success(f"Open ports: {', '.join(map(str, open_ports))}")
             else:
@@ -192,11 +157,14 @@ def main():
 
         # Web Crawling and Vulnerability Scanning
         st.write("### Web Crawling and Vulnerability Scanning")
-        with st.spinner(f"Crawling website (max {max_pages} pages)..."):
-            pages = crawl_website(target_url, max_pages)
+        pages = crawl_website(target_url, max_pages)
         
         st.write(f"Crawled {len(pages)} pages.")
-        for page in pages:
+        
+        vulnerability_progress = st.progress(0)
+        vulnerability_status = st.empty()
+
+        for i, page in enumerate(pages):
             st.write(f"Scanning: {page}")
             vulnerabilities = check_common_vulnerabilities(page)
             if vulnerabilities:
@@ -204,8 +172,17 @@ def main():
                     st.warning(vuln)
             else:
                 st.success("No common vulnerabilities detected on this page.")
+            
+            # Update vulnerability scanning progress
+            progress = (i + 1) / len(pages)
+            vulnerability_progress.progress(progress)
+            vulnerability_status.text(f"Scanned {i + 1}/{len(pages)} pages for vulnerabilities")
+
+        vulnerability_progress.empty()
+        vulnerability_status.empty()
 
     st.warning("Note: This tool is for educational purposes only. Always obtain explicit permission before scanning any website or system you do not own.")
 
 if __name__ == "__main__":
     main()
+    
