@@ -10,6 +10,7 @@ import time
 import re
 import subprocess
 import json
+# Add these new imports for PDF generation
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -17,15 +18,42 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from io import BytesIO
 
-def is_valid_url(url):
-    try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except ValueError:
-        return False
+# [Your existing functions remain here]
 
-# [All other functions remain unchanged: get_ip_from_url, scan_port, scan_ports, check_http_headers, crawl_website, check_common_vulnerabilities, check_ssl_tls, check_ssl_tls_extended, generate_pdf_report]
+# Add this new function for PDF report generation
+def generate_pdf_report(scan_results):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
 
+    # Title
+    story.append(Paragraph("Web Vulnerability Assessment Report", styles['Title']))
+    story.append(Spacer(1, 12))
+
+    # Target Information
+    story.append(Paragraph("Target Information", styles['Heading2']))
+    story.append(Paragraph(f"URL: {scan_results['target_url']}", styles['Normal']))
+    story.append(Paragraph(f"IP Address: {scan_results['ip_address']}", styles['Normal']))
+    story.append(Spacer(1, 12))
+
+    # Add other sections based on your scan results
+    # For example:
+    if 'open_ports' in scan_results:
+        story.append(Paragraph("Open Ports", styles['Heading2']))
+        if scan_results['open_ports']:
+            story.append(Paragraph(f"Open ports: {', '.join(map(str, scan_results['open_ports']))}", styles['Normal']))
+        else:
+            story.append(Paragraph("No open ports found in the specified range.", styles['Normal']))
+        story.append(Spacer(1, 12))
+
+    # Add more sections for HTTP headers, SSL/TLS analysis, vulnerabilities, etc.
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# Modify your main function to include the report generation
 def main():
     st.title("Advanced Web Vulnerability Assessment Tool")
     
@@ -63,9 +91,10 @@ def main():
             "vulnerabilities": {}
         }
 
-        # [Rest of the main function remains unchanged]
+        # Your existing scanning code goes here
+        # Make sure to populate the scan_results dictionary with your findings
 
-        # Generate PDF Report
+        # After all scans are complete, generate the PDF report
         pdf_buffer = generate_pdf_report(scan_results)
         st.download_button(
             label="Download PDF Report",
