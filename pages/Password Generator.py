@@ -37,18 +37,6 @@ def main():
         password = generate_password(length)
         st.success("Your generated password is:")
         st.code(password, language=None)
-        
-        # Add a copy button
-        st.markdown(f"<div style='display: flex; align-items: center;'>"
-                    f"<input type='text' value='{password}' id='password' readonly style='flex-grow: 1; margin-right: 20px;'>"
-                    f"<button onclick='copyPassword()'>Copy</button></div>"
-                    f"<script>"
-                    f"function copyPassword() {{"
-                    f"  var copyText = document.getElementById('password');"
-                    f"  copyText.select();"
-                    f"  document.execCommand('copy');"
-                    f"}}"
-                    f"</script>", unsafe_allow_html=True)
 
     st.write("Note: Always store your passwords securely and never share them with others.")
 
