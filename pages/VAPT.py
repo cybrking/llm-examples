@@ -2,20 +2,8 @@ import streamlit as st
 import socket
 import concurrent.futures
 import requests
-from urllib.parse import urlparse, urljoin
-from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 import ssl
-import OpenSSL
-import time
-import re
-import subprocess
-import json
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from io import BytesIO
 
 def is_valid_url(url):
     try:
@@ -78,39 +66,8 @@ def check_ssl_tls(url):
     except Exception as e:
         return {"error": str(e)}
 
-def generate_pdf_report(scan_results):
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
-    styles = getSampleStyleSheet()
-    story = []
-
-    # Title
-    story.append(Paragraph("Web Vulnerability Assessment Report", styles['Title']))
-    story.append(Spacer(1, 12))
-
-    # Target Information
-    story.append(Paragraph("Target Information", styles['Heading2']))
-    story.append(Paragraph(f"URL: {scan_results['target_url']}", styles['Normal']))
-    story.append(Paragraph(f"IP Address: {scan_results['ip_address']}", styles['Normal']))
-    story.append(Spacer(1, 12))
-
-    # Add other sections based on your scan results
-    if 'open_ports' in scan_results:
-        story.append(Paragraph("Open Ports", styles['Heading2']))
-        if scan_results['open_ports']:
-            story.append(Paragraph(f"Open ports: {', '.join(map(str, scan_results['open_ports']))}", styles['Normal']))
-        else:
-            story.append(Paragraph("No open ports found in the specified range.", styles['Normal']))
-        story.append(Spacer(1, 12))
-
-    # Add more sections for HTTP headers, SSL/TLS analysis, vulnerabilities, etc.
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
 def main():
-    st.title("Advanced Web Vulnerability Assessment Tool")
+    st.title("Streamlined Web Vulnerability Assessment Tool")
     
     target_url = st.text_input("Enter target URL (include http:// or https://):")
     
@@ -129,57 +86,55 @@ def main():
 
     st.info(f"Resolved IP address: {ip_address}")
 
-    scan_type = st.selectbox("Select scan type:", ["Passive", "Active"])
-    
-    if scan_type == "Active":
-        start_port = st.number_input("Start Port", min_value=1, max_value=65535, value=1)
-        end_port = st.number_input("End Port", min_value=1, max_value=65535, value=1000)
-    
-    max_pages = st.number_input("Maximum pages to crawl", min_value=1, max_value=100, value=10)
+    start_port = st.number_input("Start Port", min_value=1, max_value=65535, value=1)
+    end_port = st.number_input("End Port", min_value=1, max_value=65535, value=1000)
 
     if st.button("Start Scan"):
         st.write("## Scan Results")
 
-        scan_results = {
-            "target_url": target_url,
-            "ip_address": ip_address,
-            "vulnerabilities": {}
-        }
+        # 1. Port Scanning
+        st.write("### 1. Port Scanning")
+        with st.spinner("Scanning ports..."):
+            open_ports = scan_ports(ip_address, start_port, end_port)
+            if open_ports:
+                st.success(f"Open ports: {', '.join(map(str, open_ports))}")
+            else:
+                st.info("No open ports found in the specified range.")
 
-        # Perform scans and populate scan_results
-        if scan_type == "Active":
-            with st.spinner("Scanning ports..."):
-                open_ports = scan_ports(ip_address, start_port, end_port)
-                scan_results["open_ports"] = open_ports
-                if open_ports:
-                    st.success(f"Open ports: {', '.join(map(str, open_ports))}")
-                else:
-                    st.info("No open ports found in the specified range.")
-
+        # 2. HTTP Header Analysis
+        st.write("### 2. HTTP Header Analysis")
         with st.spinner("Checking HTTP headers..."):
             headers, final_url = check_http_headers(target_url)
-            scan_results["http_headers"] = headers
             if headers:
                 st.json(dict(headers))
+                if final_url != target_url:
+                    st.warning(f"Redirected to: {final_url}")
+                if 'Server' in headers:
+                    st.warning(f"Server software disclosed: {headers['Server']}")
+                if not headers.get('X-Frame-Options'):
+                    st.warning("X-Frame-Options header missing. Potential clickjacking vulnerability.")
+                if not headers.get('Strict-Transport-Security'):
+                    st.warning("HSTS header missing. Potential downgrade attacks possible.")
+                if headers.get('X-Powered-By'):
+                    st.warning(f"X-Powered-By header discloses: {headers['X-Powered-By']}")
             else:
                 st.error("Unable to retrieve HTTP headers.")
 
+        # 3. SSL/TLS Analysis
+        st.write("### 3. SSL/TLS Analysis")
         with st.spinner("Performing SSL/TLS analysis..."):
             ssl_info = check_ssl_tls(target_url)
-            scan_results["ssl_info"] = ssl_info
             if "error" not in ssl_info:
                 st.json(ssl_info)
+                # Add some basic SSL/TLS vulnerability checks
+                from datetime import datetime
+                cert_expiry = datetime.strptime(ssl_info['notAfter'], "%b %d %H:%M:%S %Y %Z")
+                if cert_expiry < datetime.now():
+                    st.error("SSL Certificate has expired!")
+                elif (cert_expiry - datetime.now()).days < 30:
+                    st.warning("SSL Certificate will expire in less than 30 days!")
             else:
                 st.error(f"Unable to perform SSL/TLS analysis: {ssl_info['error']}")
-
-        # Generate and offer PDF report for download
-        pdf_buffer = generate_pdf_report(scan_results)
-        st.download_button(
-            label="Download PDF Report",
-            data=pdf_buffer,
-            file_name="vulnerability_assessment_report.pdf",
-            mime="application/pdf"
-        )
 
     st.warning("Note: This tool is for educational purposes only. Always obtain explicit permission before scanning any website or system you do not own.")
 
