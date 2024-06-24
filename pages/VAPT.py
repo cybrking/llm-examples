@@ -9,7 +9,30 @@ import OpenSSL
 import time
 import re
 
-# [Previous helper functions remain unchanged: is_valid_url, get_ip_from_url, scan_port, check_http_headers, check_ssl_tls, rate_limited_request]
+def is_valid_url(url):
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
+
+def get_ip_from_url(url):
+    try:
+        domain = urlparse(url).netloc
+        return socket.gethostbyname(domain)
+    except socket.gaierror:
+        return None
+
+def scan_port(ip, port):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex((ip, port))
+            if result == 0:
+                return port
+    except:
+        pass
+    return None
 
 def scan_ports(ip, start_port, end_port):
     open_ports = []
@@ -31,6 +54,13 @@ def scan_ports(ip, start_port, end_port):
     progress_bar.empty()
     status_text.empty()
     return open_ports
+
+def check_http_headers(url):
+    try:
+        response = requests.head(url, timeout=5, allow_redirects=True)
+        return response.headers, response.url
+    except:
+        return None, None
 
 def crawl_website(url, max_pages=10):
     visited = set()
@@ -64,6 +94,28 @@ def crawl_website(url, max_pages=10):
     progress_bar.empty()
     status_text.empty()
     return pages
+
+def check_ssl_tls(url):
+    try:
+        hostname = urlparse(url).netloc
+        cert = ssl.get_server_certificate((hostname, 443))
+        x509 = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert)
+        
+        issues = []
+        if x509.get_version() != 2:  # Version 3 is represented as 2
+            issues.append("Certificate is not X.509 v3")
+        if x509.has_expired():
+            issues.append("Certificate has expired")
+        
+        return {
+            "issuer": x509.get_issuer().get_components(),
+            "subject": x509.get_subject().get_components(),
+            "version": x509.get_version(),
+            "expires": x509.get_notAfter().decode('ascii'),
+            "issues": issues
+        }
+    except:
+        return None
 
 def check_common_vulnerabilities(url):
     vulnerabilities = []
@@ -185,4 +237,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
