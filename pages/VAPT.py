@@ -9,7 +9,40 @@ import OpenSSL
 import time
 import re
 
-# Existing functions (is_valid_url, get_ip_from_url, scan_port, scan_ports) remain the same
+def is_valid_url(url):
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
+
+def get_ip_from_url(url):
+    try:
+        domain = urlparse(url).netloc
+        return socket.gethostbyname(domain)
+    except socket.gaierror:
+        return None
+
+def scan_port(ip, port):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex((ip, port))
+            if result == 0:
+                return port
+    except:
+        pass
+    return None
+
+def scan_ports(ip, start_port, end_port):
+    open_ports = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+        future_to_port = {executor.submit(scan_port, ip, port): port for port in range(start_port, end_port + 1)}
+        for future in concurrent.futures.as_completed(future_to_port):
+            result = future.result()
+            if result:
+                open_ports.append(result)
+    return open_ports
 
 def check_http_headers(url):
     try:
