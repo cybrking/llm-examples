@@ -4,6 +4,17 @@ from urllib.parse import urlparse
 import ipaddress
 import pandas as pd
 
+# SVG logo as a string
+LOGO_SVG = '''
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <rect x="5" y="25" width="70" height="50" fill="#e34c26" rx="5" ry="5"/>
+  <text x="12" y="55" font-family="Courier, monospace" font-size="12" fill="white">&lt;header&gt;</text>
+  <circle cx="60" cy="60" r="25" fill="none" stroke="#333" stroke-width="4"/>
+  <line x1="78" y1="78" x2="95" y2="95" stroke="#333" stroke-width="4" stroke-linecap="round"/>
+  <rect x="75" y="75" width="25" height="8" fill="#333" transform="rotate(45, 75, 75)"/>
+</svg>
+'''
+
 def is_valid_input(input_string):
     # Check if it's a valid URL
     try:
@@ -64,6 +75,7 @@ def perform_header_checks(headers):
     return checks
 
 def main():
+    st.markdown(f'<div style="text-align: center;">{LOGO_SVG}</div>', unsafe_allow_html=True)
     st.title("HTTP Header Security Check Tool")
     
     target = st.text_input("Enter target URL, IP address, or domain name:", value="")
