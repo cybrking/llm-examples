@@ -40,7 +40,7 @@ def main():
         
         # Add a copy button
         st.markdown(f"<div style='display: flex; align-items: center;'>"
-                    f"<input type='text' value='{password}' id='password' readonly style='flex-grow: 1; margin-right: 10px;'>"
+                    f"<input type='text' value='{password}' id='password' readonly style='flex-grow: 1; margin-right: 20px;'>"
                     f"<button onclick='copyPassword()'>Copy</button></div>"
                     f"<script>"
                     f"function copyPassword() {{"
