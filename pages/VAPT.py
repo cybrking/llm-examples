@@ -44,14 +44,22 @@ def check_http_headers(url):
 
 def perform_header_checks(headers):
     checks = [
-        ("Server Disclosure", 'Server' not in headers),
-        ("X-Frame-Options Present", 'X-Frame-Options' in headers),
-        ("Strict-Transport-Security (HSTS) Present", 'Strict-Transport-Security' in headers),
-        ("X-Powered-By Absent", 'X-Powered-By' not in headers),
-        ("X-XSS-Protection Present", 'X-XSS-Protection' in headers),
-        ("X-Content-Type-Options Present", 'X-Content-Type-Options' in headers),
-        ("Referrer-Policy Present", 'Referrer-Policy' in headers),
-        ("Content-Security-Policy Present", 'Content-Security-Policy' in headers),
+        ("Server Disclosure", 'Server' not in headers, 
+         "Server header discloses software information. This can be used by attackers to identify vulnerabilities."),
+        ("X-Frame-Options Present", 'X-Frame-Options' in headers, 
+         "X-Frame-Options header missing. This can lead to clickjacking vulnerabilities."),
+        ("Strict-Transport-Security (HSTS) Present", 'Strict-Transport-Security' in headers, 
+         "HSTS header missing. This can make the site vulnerable to protocol downgrade attacks."),
+        ("X-Powered-By Absent", 'X-Powered-By' not in headers, 
+         "X-Powered-By header present. This discloses technology stack information."),
+        ("X-XSS-Protection Present", 'X-XSS-Protection' in headers, 
+         "X-XSS-Protection header missing. This can make the site more vulnerable to XSS attacks."),
+        ("X-Content-Type-Options Present", 'X-Content-Type-Options' in headers, 
+         "X-Content-Type-Options header missing. This can lead to MIME type sniffing vulnerabilities."),
+        ("Referrer-Policy Present", 'Referrer-Policy' in headers, 
+         "Referrer-Policy header missing. This can lead to privacy concerns and information leakage."),
+        ("Content-Security-Policy Present", 'Content-Security-Policy' in headers, 
+         "Content-Security-Policy header missing. This can make the site more vulnerable to various attacks including XSS."),
     ]
     return checks
 
@@ -93,7 +101,8 @@ def main():
                 # Prepare data for the DataFrame
                 df_data = {
                     "Check": [check[0] for check in checks],
-                    "Result": ["Pass" if check[1] else "Fail" for check in checks]
+                    "Result": ["Pass" if check[1] else "Fail" for check in checks],
+                    "Warning/Recommendation": [check[2] if not check[1] else "" for check in checks]
                 }
                 df = pd.DataFrame(df_data)
                 
@@ -103,28 +112,7 @@ def main():
                     return f'color: {color}'
                 
                 st.write("### Security Header Checks")
-                st.dataframe(df.style.applymap(color_result, subset=['Result']))
-                
-                # Display specific warnings for failed checks
-                st.write("### Warnings and Recommendations")
-                for check, result in checks:
-                    if not result:
-                        if check == "Server Disclosure":
-                            st.warning(f"Server header discloses: {headers['Server']}")
-                        elif check == "X-Frame-Options Present":
-                            st.warning("X-Frame-Options header missing. Potential clickjacking vulnerability.")
-                        elif check == "Strict-Transport-Security (HSTS) Present":
-                            st.warning("HSTS header missing. Potential downgrade attacks possible.")
-                        elif check == "X-Powered-By Absent":
-                            st.warning(f"X-Powered-By header discloses: {headers['X-Powered-By']}")
-                        elif check == "X-XSS-Protection Present":
-                            st.warning("X-XSS-Protection header missing. XSS protection not enabled.")
-                        elif check == "X-Content-Type-Options Present":
-                            st.warning("X-Content-Type-Options header missing. MIME type sniffing possible.")
-                        elif check == "Referrer-Policy Present":
-                            st.warning("Referrer-Policy header missing. Potential privacy concerns.")
-                        elif check == "Content-Security-Policy Present":
-                            st.warning("Content-Security-Policy header missing. Potential XSS vulnerabilities.")
+                st.dataframe(df.style.applymap(color_result, subset=['Result']), width=1000)
                 
             else:
                 st.error(f"Unable to retrieve HTTP headers. Error: {final_url}")
