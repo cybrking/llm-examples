@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from typing import Dict, List, Any
+import json
+
 
 # Function to gather application context
 def gather_application_context():
@@ -170,6 +172,70 @@ def display_results(issues, context):
         
         st.subheader("Analysis Context")
         st.json(context)
+
+def parse_security_group_json(json_data):
+    try:
+        data = json.loads(json_data)
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict) and 'SecurityGroups' in data:
+            return data['SecurityGroups']
+        else:
+            st.error("Invalid JSON format. Expected a list of security groups or a dict with 'SecurityGroups' key.")
+            return None
+    except json.JSONDecodeError:
+        st.error("Invalid JSON. Please check your input.")
+        return None
+
+def main():
+    st.title("Context-Aware Cloud Security Group Analyzer")
+
+    current_context = gather_application_context()
+
+    st.header("Security Group Input")
+    input_method = st.radio("Choose input method:", ["Upload JSON file", "Paste JSON data", "Use AWS API"])
+
+    security_groups = None
+
+    if input_method == "Upload JSON file":
+        uploaded_file = st.file_uploader("Choose a JSON file", type="json")
+        if uploaded_file is not None:
+            json_data = uploaded_file.getvalue().decode("utf-8")
+            security_groups = parse_security_group_json(json_data)
+
+    elif input_method == "Paste JSON data":
+        json_data = st.text_area("Paste your Security Group JSON data here:")
+        if json_data:
+            security_groups = parse_security_group_json(json_data)
+
+    elif input_method == "Use AWS API":
+        region_name = st.text_input("Enter AWS Region Name", "us-west-2")
+        if st.button("Fetch and Analyze AWS Security Groups"):
+            try:
+                import boto3
+            except ImportError:
+                st.error("boto3 is not installed. Please install it using 'pip install boto3'")
+                return
+
+            try:
+                ec2 = boto3.client('ec2', region_name=region_name)
+                response = ec2.describe_security_groups()
+                security_groups = response['SecurityGroups']
+            except Exception as e:
+                st.error(f"Error fetching AWS security groups: {str(e)}")
+                st.info("Make sure your AWS credentials are properly configured.")
+                return
+
+    if security_groups:
+        analyzer = ContextAwareSecurityGroupAnalyzer(current_context)
+        for group in security_groups:
+            analyzer.analyze_security_group(group)
+        
+        display_results(analyzer.issues, current_context)
+
+if __name__ == "__main__":
+    main()
+
 
 def main():
     st.title("Context-Aware Cloud Security Group Analyzer")
