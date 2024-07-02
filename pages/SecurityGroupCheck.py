@@ -1,65 +1,47 @@
 import streamlit as st
 import yaml
+import pandas as pd
+import plotly.graph_objects as go
 
 def check_public_ingress(security_group):
     issues = []
-    debug_info = []
     group_name = security_group.get('Properties', {}).get('GroupName', 'Unknown Group')
-    debug_info.append(f"Analyzing group: {group_name}")
     
     ingress_rules = security_group.get('Properties', {}).get('SecurityGroupIngress', [])
     if not isinstance(ingress_rules, list):
         ingress_rules = [ingress_rules]
-    
-    debug_info.append(f"Found {len(ingress_rules)} ingress rules")
 
-    for i, rule in enumerate(ingress_rules):
-        debug_info.append(f"Analyzing rule {i+1}:")
-        debug_info.append(f"Rule content: {rule}")
-        
+    for rule in ingress_rules:
         from_port = rule.get('FromPort')
         to_port = rule.get('ToPort')
         protocol = rule.get('IpProtocol')
         cidr = rule.get('CidrIp')
-        
-        debug_info.append(f"Ports: {from_port} - {to_port}")
-        debug_info.append(f"Protocol: {protocol}")
-        debug_info.append(f"CIDR: {cidr}")
 
         if cidr == '0.0.0.0/0':
             port_range = f"{from_port}-{to_port}" if from_port != to_port else str(from_port)
             
-            issue = f"Public ingress detected in {group_name}: "
-            if protocol == '-1':
-                issue += "All traffic "
-            else:
-                issue += f"Protocol {protocol} "
-            
-            if from_port == 0 and to_port == 65535:
-                issue += "on all ports "
-            else:
-                issue += f"on port(s) {port_range} "
-            
-            issue += "is open to the world (0.0.0.0/0)"
+            issue = {
+                "Group Name": group_name,
+                "Protocol": "All" if protocol == '-1' else protocol,
+                "Port Range": "All" if (from_port == 0 and to_port == 65535) else port_range,
+                "Source": cidr,
+                "Severity": "High" if protocol == '-1' else "Medium"
+            }
             issues.append(issue)
-            debug_info.append(f"Issue found: {issue}")
-        else:
-            debug_info.append("No public ingress in this rule")
 
-    return issues, debug_info
+    return issues
 
 def parse_input(data):
     try:
         parsed = yaml.safe_load(data)
-        st.info("Input parsed as YAML")
         
         if 'Resources' in parsed:
             security_groups = []
             for resource_name, resource in parsed['Resources'].items():
                 if resource.get('Type') == 'AWS::EC2::SecurityGroup':
+                    resource['Properties']['GroupName'] = resource_name
                     security_groups.append(resource)
             
-            st.info(f"Found {len(security_groups)} security group(s) in the CloudFormation template")
             return security_groups
         else:
             st.error("No 'Resources' section found in the CloudFormation template")
@@ -68,7 +50,25 @@ def parse_input(data):
         st.error("Invalid YAML. Please ensure it's a valid CloudFormation template.")
         return None
 
+def create_issues_table(all_issues):
+    if all_issues:
+        df = pd.DataFrame(all_issues)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.success("No public ingress rules found.")
+
+def create_issues_chart(all_issues):
+    if all_issues:
+        df = pd.DataFrame(all_issues)
+        severity_counts = df['Severity'].value_counts()
+        
+        fig = go.Figure(data=[go.Pie(labels=severity_counts.index, values=severity_counts.values, hole=.3)])
+        fig.update_layout(title_text="Issues by Severity")
+        st.plotly_chart(fig, use_container_width=True)
+
 def main():
+    st.set_page_config(page_title="CloudFormation Security Group Analyzer", layout="wide")
+    
     st.title("CloudFormation Security Group Public Ingress Checker")
     st.write("Paste your CloudFormation template (YAML format) below")
 
@@ -79,23 +79,35 @@ def main():
             security_groups = parse_input(input_data)
             if security_groups:
                 all_issues = []
-                all_debug_info = []
                 for sg in security_groups:
-                    issues, debug_info = check_public_ingress(sg)
+                    issues = check_public_ingress(sg)
                     all_issues.extend(issues)
-                    all_debug_info.extend(debug_info)
-                
-                st.subheader("Debug Information")
-                for info in all_debug_info:
-                    st.text(info)
                 
                 st.subheader("Analysis Results")
+                
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.subheader("Detected Issues")
+                    create_issues_table(all_issues)
+                
+                with col2:
+                    st.subheader("Issues by Severity")
+                    create_issues_chart(all_issues)
+                
                 if all_issues:
-                    st.warning("Public ingress rules found:")
-                    for issue in all_issues:
-                        st.write(issue)
+                    st.warning(f"Found {len(all_issues)} public ingress rules that may pose security risks.")
+                    
+                    # Export results
+                    csv = pd.DataFrame(all_issues).to_csv(index=False)
+                    st.download_button(
+                        label="Download Results as CSV",
+                        data=csv,
+                        file_name="security_group_analysis.csv",
+                        mime="text/csv",
+                    )
                 else:
-                    st.success("No public ingress rules found.")
+                    st.success("No public ingress rules found. Your security groups appear to be properly configured.")
         else:
             st.error("Please enter a CloudFormation template.")
 
