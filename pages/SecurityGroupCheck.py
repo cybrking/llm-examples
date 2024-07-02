@@ -4,35 +4,6 @@ import altair as alt
 from typing import Dict, List, Any
 import json
 
-
-# Function to gather application context
-def gather_application_context():
-    st.subheader("Application Context")
-    
-    context = {}
-    
-    context['app_type'] = st.selectbox(
-        "Application Type",
-        ["Internal", "External", "Hybrid"]
-    )
-    
-    context['environment'] = st.selectbox(
-        "Environment",
-        ["Development", "Testing/Staging", "Production"]
-    )
-    
-    context['data_sensitivity'] = st.selectbox(
-        "Data Sensitivity",
-        ["Public", "Internal Use Only", "Confidential", "Highly Sensitive"]
-    )
-    
-    context['compliance'] = st.multiselect(
-        "Compliance Requirements",
-        ["GDPR", "HIPAA", "PCI DSS", "SOC 2", "None"]
-    )
-    
-    return context
-
 # Base rules for security group analysis
 BASE_RULES = {
     "open_internet": {"severity": "HIGH", "ports": []},
@@ -49,6 +20,37 @@ BASE_RULES = {
         "ports": [80, 443]  # HTTP and HTTPS
     }
 }
+
+def gather_application_context():
+    st.subheader("Application Context")
+    
+    context = {}
+    
+    context['app_type'] = st.selectbox(
+        "Application Type",
+        ["Internal", "External", "Hybrid"],
+        key="app_type_select"
+    )
+    
+    context['environment'] = st.selectbox(
+        "Environment",
+        ["Development", "Testing/Staging", "Production"],
+        key="environment_select"
+    )
+    
+    context['data_sensitivity'] = st.selectbox(
+        "Data Sensitivity",
+        ["Public", "Internal Use Only", "Confidential", "Highly Sensitive"],
+        key="data_sensitivity_select"
+    )
+    
+    context['compliance'] = st.multiselect(
+        "Compliance Requirements",
+        ["GDPR", "HIPAA", "PCI DSS", "SOC 2", "None"],
+        key="compliance_multiselect"
+    )
+    
+    return context
 
 def adjust_rules_by_context(context: Dict[str, Any]) -> Dict[str, Any]:
     rules = BASE_RULES.copy()
@@ -190,27 +192,29 @@ def parse_security_group_json(json_data):
 def main():
     st.title("Context-Aware Cloud Security Group Analyzer")
 
-    current_context = gather_application_context()
+    # Use session state to store the context
+    if 'current_context' not in st.session_state:
+        st.session_state.current_context = gather_application_context()
 
     st.header("Security Group Input")
-    input_method = st.radio("Choose input method:", ["Upload JSON file", "Paste JSON data", "Use AWS API"])
+    input_method = st.radio("Choose input method:", ["Upload JSON file", "Paste JSON data", "Use AWS API"], key="input_method_radio")
 
     security_groups = None
 
     if input_method == "Upload JSON file":
-        uploaded_file = st.file_uploader("Choose a JSON file", type="json")
+        uploaded_file = st.file_uploader("Choose a JSON file", type="json", key="json_file_uploader")
         if uploaded_file is not None:
             json_data = uploaded_file.getvalue().decode("utf-8")
             security_groups = parse_security_group_json(json_data)
 
     elif input_method == "Paste JSON data":
-        json_data = st.text_area("Paste your Security Group JSON data here:")
+        json_data = st.text_area("Paste your Security Group JSON data here:", key="json_data_textarea")
         if json_data:
             security_groups = parse_security_group_json(json_data)
 
     elif input_method == "Use AWS API":
-        region_name = st.text_input("Enter AWS Region Name", "us-west-2")
-        if st.button("Fetch and Analyze AWS Security Groups"):
+        region_name = st.text_input("Enter AWS Region Name", "us-west-2", key="aws_region_input")
+        if st.button("Fetch and Analyze AWS Security Groups", key="aws_fetch_button"):
             try:
                 import boto3
             except ImportError:
@@ -227,12 +231,11 @@ def main():
                 return
 
     if security_groups:
-        analyzer = ContextAwareSecurityGroupAnalyzer(current_context)
+        analyzer = ContextAwareSecurityGroupAnalyzer(st.session_state.current_context)
         for group in security_groups:
             analyzer.analyze_security_group(group)
         
-        display_results(analyzer.issues, current_context)
+        display_results(analyzer.issues, st.session_state.current_context)
 
 if __name__ == "__main__":
     main()
-
