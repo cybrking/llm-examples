@@ -2,11 +2,94 @@ import streamlit as st
 import yaml
 import pandas as pd
 import re
+from transformers import pipeline
 
-def check_security_group(security_group):
+# Load the Hugging Face model for zero-shot classification
+@st.cache_resource
+def load_classifier():
+    return pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+
+classifier = load_classifier()
+
+def analyze_security_group(security_group):
+    classification = {
+        'public_ports': set(),
+        'internal_rules': 0,
+        'total_rules': 0,
+        'name_clues': set(),
+        'tags': {},
+    }
+    
+    group_name = security_group.get('Properties', {}).get('GroupName', '')
+    group_description = security_group.get('Properties', {}).get('GroupDescription', '')
+    
+    # Use Hugging Face model to classify the group based on name and description
+    text_to_classify = f"{group_name} {group_description}"
+    candidate_labels = ["public web server", "internal database", "load balancer", "application server", "bastion host"]
+    result = classifier(text_to_classify, candidate_labels)
+    classification['hf_classification'] = result['labels'][0]
+    classification['hf_score'] = result['scores'][0]
+    
+    # Analyze tags
+    tags = security_group.get('Properties', {}).get('Tags', [])
+    for tag in tags:
+        if isinstance(tag, dict):
+            key = tag.get('Key', '').lower()
+            value = tag.get('Value', '').lower()
+            classification['tags'][key] = value
+    
+    # Analyze ingress rules
+    ingress_rules = security_group.get('Properties', {}).get('SecurityGroupIngress', [])
+    if not isinstance(ingress_rules, list):
+        ingress_rules = [ingress_rules]
+    
+    for rule in ingress_rules:
+        classification['total_rules'] += 1
+        if rule.get('CidrIp') == '0.0.0.0/0':
+            from_port = rule.get('FromPort')
+            to_port = rule.get('ToPort')
+            if from_port == to_port:
+                classification['public_ports'].add(from_port)
+            else:
+                classification['public_ports'].update(range(from_port, to_port + 1))
+        elif 'SourceSecurityGroupId' in rule:
+            classification['internal_rules'] += 1
+    
+    return classify_security_group(classification)
+
+def classify_security_group(classification):
+    hf_class = classification['hf_classification']
+    hf_score = classification['hf_score']
+    
+    if hf_score > 0.7:  # High confidence in Hugging Face classification
+        if hf_class == "public web server":
+            return "Fully External"
+        elif hf_class == "internal database":
+            return "Fully Internal"
+        elif hf_class == "load balancer":
+            return "Limited External Access"
+        elif hf_class == "application server":
+            return "Mixed Access"
+        elif hf_class == "bastion host":
+            return "DMZ"
+    
+    # Fall back to rule-based classification if Hugging Face confidence is low
+    if len(classification['public_ports']) == 0:
+        return "Fully Internal"
+    elif len(classification['public_ports']) <= 2 and classification['internal_rules'] > 0:
+        return "Limited External Access"
+    elif len(classification['public_ports']) > 2:
+        return "Fully External"
+    elif 'dmz' in classification['tags'].values():
+        return "DMZ"
+    else:
+        return "Mixed Access"
+
+def check_security_group(security_group, context):
     issues = []
     group_name = security_group.get('Properties', {}).get('GroupName', 'Unknown Group')
-    group_description = security_group.get('Properties', {}).get('GroupDescription', '')
+    
+    classification = analyze_security_group(security_group)
     
     ingress_rules = security_group.get('Properties', {}).get('SecurityGroupIngress', [])
     egress_rules = security_group.get('Properties', {}).get('SecurityGroupEgress', [])
@@ -16,135 +99,39 @@ def check_security_group(security_group):
     if not isinstance(egress_rules, list):
         egress_rules = [egress_rules]
 
-    # Check naming and documentation
-    check_naming_and_documentation(group_name, group_description, issues)
+    check_naming_and_documentation(security_group, issues)
 
-    # Check ingress rules
     for rule in ingress_rules:
-        check_ingress_rule(rule, group_name, issues)
+        check_ingress_rule(rule, group_name, classification, context, issues)
 
-    # Check egress rules
     for rule in egress_rules:
-        check_egress_rule(rule, group_name, issues)
+        check_egress_rule(rule, group_name, classification, context, issues)
 
-    # Context-aware checks
-    check_context_aware_rules(ingress_rules, egress_rules, group_name, issues)
+    check_context_aware_rules(ingress_rules, egress_rules, group_name, classification, context, issues)
 
-    return issues
+    return issues, classification
 
-def check_naming_and_documentation(group_name, group_description, issues):
-    if len(group_name) < 5 or not re.match(r'^[a-zA-Z]', group_name):
-        issues.append({
-            "Group Name": group_name,
-            "Issue": "Non-descriptive naming",
-            "Recommendation": "Use clear, descriptive names for security groups",
-            "Risk": "Low"
-        })
-    
-    if not group_description or len(group_description) < 10:
-        issues.append({
-            "Group Name": group_name,
-            "Issue": "Insufficient documentation",
-            "Recommendation": "Provide a detailed description for the security group",
-            "Risk": "Low"
-        })
-
-def check_ingress_rule(rule, group_name, issues):
-    from_port = rule.get('FromPort')
-    to_port = rule.get('ToPort')
-    protocol = rule.get('IpProtocol')
-    cidr = rule.get('CidrIp')
-    source_sg = rule.get('SourceSecurityGroupId')
-
-    if cidr == '0.0.0.0/0':
-        if from_port not in [80, 443]:
-            issues.append({
-                "Group Name": group_name,
-                "Issue": "Overly permissive ingress rule",
-                "Details": f"Protocol: {protocol}, Ports: {from_port}-{to_port}, Source: {cidr}",
-                "Recommendation": "Restrict to specific IP ranges or use security groups as sources",
-                "Risk": "High"
-            })
-    
-    if from_port == 22 and cidr == '0.0.0.0/0':
-        issues.append({
-            "Group Name": group_name,
-            "Issue": "SSH open to the world",
-            "Recommendation": "Restrict SSH access to specific IP ranges (e.g., corporate IP addresses)",
-            "Risk": "High"
-        })
-
-def check_egress_rule(rule, group_name, issues):
-    from_port = rule.get('FromPort')
-    to_port = rule.get('ToPort')
-    protocol = rule.get('IpProtocol')
-    cidr = rule.get('CidrIp')
-
-    if cidr == '0.0.0.0/0' and protocol == '-1':
-        issues.append({
-            "Group Name": group_name,
-            "Issue": "Unrestricted egress traffic",
-            "Recommendation": "Limit outbound traffic to required destinations and protocols",
-            "Risk": "Medium"
-        })
-
-def check_context_aware_rules(ingress_rules, egress_rules, group_name, issues):
-    # Web Application checks
-    web_ports = [rule for rule in ingress_rules if rule.get('FromPort') in [80, 443]]
-    if not web_ports:
-        issues.append({
-            "Group Name": group_name,
-            "Issue": "Web ports not open",
-            "Recommendation": "For web applications, allow HTTP (80) and HTTPS (443) traffic",
-            "Risk": "Medium"
-        })
-
-    # Database Instance checks
-    db_ports = [3306, 5432, 1433]  # MySQL, PostgreSQL, MSSQL
-    for port in db_ports:
-        if any(rule.get('FromPort') == port and rule.get('CidrIp') == '0.0.0.0/0' for rule in ingress_rules):
-            issues.append({
-                "Group Name": group_name,
-                "Issue": f"Database port {port} open to the world",
-                "Recommendation": "Restrict database access to specific application servers",
-                "Risk": "High"
-            })
-
-    # Microservices checks
-    if len(ingress_rules) > 10:
-        issues.append({
-            "Group Name": group_name,
-            "Issue": "High number of ingress rules",
-            "Recommendation": "For microservices, consider using separate security groups for different services",
-            "Risk": "Medium"
-        })
-
-def parse_input(data):
-    try:
-        parsed = yaml.safe_load(data)
-        
-        if 'Resources' in parsed:
-            security_groups = []
-            for resource_name, resource in parsed['Resources'].items():
-                if resource.get('Type') == 'AWS::EC2::SecurityGroup':
-                    resource['Properties']['GroupName'] = resource_name
-                    security_groups.append(resource)
-            
-            return security_groups
-        else:
-            st.error("No 'Resources' section found in the CloudFormation template")
-            return None
-    except yaml.YAMLError:
-        st.error("Invalid YAML. Please ensure it's a valid CloudFormation template.")
-        return None
+# ... (keep the rest of the functions as they were in the previous version)
 
 def main():
-    st.set_page_config(page_title="Comprehensive AWS Security Group Best Practices Analyzer", layout="wide")
+    st.set_page_config(page_title="Hugging Face Enhanced AWS Security Group Analyzer", layout="wide")
     
-    st.title("Comprehensive AWS Security Group Best Practices Analyzer")
+    st.title("Hugging Face Enhanced AWS Security Group Analyzer")
     st.write("Paste your CloudFormation template (YAML format) below")
 
     input_data = st.text_area("CloudFormation Template:", height=300)
+    
+    # Context inputs
+    st.subheader("Application Context")
+    environment = st.selectbox("Environment", ["Development", "Staging", "Production"])
+    data_sensitivity = st.selectbox("Data Sensitivity", ["Public", "Internal", "Confidential", "Highly Sensitive"])
+    compliance = st.multiselect("Compliance Requirements", ["PCI DSS", "HIPAA", "GDPR", "None"])
+
+    context = {
+        "environment": environment,
+        "data_sensitivity": data_sensitivity,
+        "compliance": compliance
+    }
     
     if st.button("Analyze Security Groups"):
         if input_data:
@@ -152,15 +139,23 @@ def main():
             if security_groups:
                 all_issues = []
                 for sg in security_groups:
-                    issues = check_security_group(sg)
+                    issues, classification = check_security_group(sg, context)
                     all_issues.extend(issues)
+                    st.subheader(f"Security Group: {sg['Properties']['GroupName']}")
+                    st.write(f"Classification: {classification}")
+                    if issues:
+                        st.write("Issues:")
+                        for issue in issues:
+                            st.write(f"- {issue['Issue']} (Risk: {issue['Risk']})")
+                    else:
+                        st.success("No issues found for this security group.")
+                    st.write("---")
                 
-                st.subheader("Analysis Results")
+                st.subheader("Overall Analysis Results")
                 
                 if all_issues:
                     df = pd.DataFrame(all_issues)
                     
-                    # Apply color to the Risk column
                     def color_risk(val):
                         color = 'red' if val == 'High' else 'orange' if val == 'Medium' else 'yellow'
                         return f'background-color: {color}; color: black'
@@ -169,9 +164,8 @@ def main():
                     
                     st.table(styled_df)
                     
-                    st.warning(f"Found {len(all_issues)} potential issues that may not align with best practices.")
+                    st.warning(f"Found {len(all_issues)} potential issues based on the provided context.")
                     
-                    # Export results
                     csv = df.to_csv(index=False)
                     st.download_button(
                         label="Download Results as CSV",
@@ -180,7 +174,7 @@ def main():
                         mime="text/csv",
                     )
                 else:
-                    st.success("No issues found. Your security groups appear to follow best practices.")
+                    st.success("No issues found based on the provided context.")
         else:
             st.error("Please enter a CloudFormation template.")
 
