@@ -7,23 +7,37 @@ def check_public_ingress(security_group):
     group_name = security_group.get('GroupName', security_group.get('group_name', 'Unknown Group'))
     
     ingress_rules = security_group.get('IpPermissions', security_group.get('ingress', []))
-    if isinstance(ingress_rules, dict):
+    if not isinstance(ingress_rules, list):
         ingress_rules = [ingress_rules]
 
     for rule in ingress_rules:
-        from_port = rule.get('FromPort', rule.get('from_port', 0))
-        to_port = rule.get('ToPort', rule.get('to_port', 65535))
+        from_port = rule.get('FromPort', rule.get('from_port'))
+        to_port = rule.get('ToPort', rule.get('to_port'))
+        
         ip_ranges = rule.get('IpRanges', rule.get('cidr_blocks', []))
-        
-        if isinstance(ip_ranges, dict):
+        if not isinstance(ip_ranges, list):
             ip_ranges = [ip_ranges]
-        
+
         for ip_range in ip_ranges:
             cidr = ip_range.get('CidrIp', ip_range) if isinstance(ip_range, dict) else ip_range
-            if cidr == '0.0.0.0/0':
-                issues.append(f"Public ingress detected in {group_name}: "
-                              f"Ports {from_port}-{to_port} are open to the world (0.0.0.0/0)")
-    
+            if isinstance(cidr, str) and cidr.strip() == '0.0.0.0/0':
+                port_range = f"{from_port}-{to_port}" if from_port != to_port else str(from_port)
+                protocol = rule.get('IpProtocol', rule.get('protocol', 'All'))
+                
+                issue = f"Public ingress detected in {group_name}: "
+                if protocol.lower() == '-1' or protocol.lower() == 'all':
+                    issue += f"All traffic "
+                else:
+                    issue += f"Protocol {protocol} "
+                
+                if from_port is None and to_port is None:
+                    issue += "on all ports "
+                else:
+                    issue += f"on port(s) {port_range} "
+                
+                issue += "is open to the world (0.0.0.0/0)"
+                issues.append(issue)
+
     return issues
 
 def parse_input(data):
