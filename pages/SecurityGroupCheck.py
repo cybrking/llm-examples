@@ -1,46 +1,115 @@
 import streamlit as st
 import json
+import yaml
+import hcl2
+import re
 
 def check_public_ingress(security_group):
     issues = []
-    group_name = security_group.get('GroupName', 'Unknown Group')
+    group_name = security_group.get('name', security_group.get('group_name', 'Unknown Group'))
     
-    for rule in security_group.get('IpPermissions', []):
-        from_port = rule.get('FromPort', 0)
-        to_port = rule.get('ToPort', 65535)
+    ingress_rules = security_group.get('ingress', [])
+    if isinstance(ingress_rules, dict):
+        ingress_rules = [ingress_rules]
+
+    for rule in ingress_rules:
+        from_port = rule.get('from_port', 0)
+        to_port = rule.get('to_port', 65535)
+        cidr_blocks = rule.get('cidr_blocks', [])
         
-        for ip_range in rule.get('IpRanges', []):
-            cidr = ip_range.get('CidrIp', '')
+        if isinstance(cidr_blocks, str):
+            cidr_blocks = [cidr_blocks]
+        
+        for cidr in cidr_blocks:
             if cidr == '0.0.0.0/0':
                 issues.append(f"Public ingress detected in {group_name}: "
                               f"Ports {from_port}-{to_port} are open to the world (0.0.0.0/0)")
     
     return issues
 
-def parse_security_group_json(json_data):
+def parse_json(data):
     try:
-        data = json.loads(json_data)
-        if isinstance(data, list):
-            return data
-        elif isinstance(data, dict) and 'SecurityGroups' in data:
-            return data['SecurityGroups']
-        elif isinstance(data, dict):
-            return [data]  # Single security group
-        else:
-            st.error("Invalid JSON format. Expected a security group, list of security groups, or a dict with 'SecurityGroups' key.")
-            return None
+        parsed = json.loads(data)
+        if isinstance(parsed, list):
+            return parsed
+        elif isinstance(parsed, dict):
+            if 'SecurityGroups' in parsed:
+                return parsed['SecurityGroups']
+            else:
+                return [parsed]
     except json.JSONDecodeError:
         st.error("Invalid JSON. Please check your input.")
+    return None
+
+def parse_yaml(data):
+    try:
+        parsed = yaml.safe_load(data)
+        if isinstance(parsed, list):
+            return parsed
+        elif isinstance(parsed, dict):
+            if 'SecurityGroups' in parsed:
+                return parsed['SecurityGroups']
+            else:
+                return [parsed]
+    except yaml.YAMLError:
+        st.error("Invalid YAML. Please check your input.")
+    return None
+
+def parse_terraform(data):
+    try:
+        parsed = hcl2.loads(data)
+        security_groups = []
+        for resource in parsed.get('resource', []):
+            if 'aws_security_group' in resource:
+                for sg_name, sg_config in resource['aws_security_group'].items():
+                    security_groups.append(sg_config)
+        return security_groups
+    except Exception as e:
+        st.error(f"Error parsing Terraform: {str(e)}")
+    return None
+
+def detect_format(data):
+    # Check for JSON
+    try:
+        json.loads(data)
+        return 'json'
+    except json.JSONDecodeError:
+        pass
+
+    # Check for YAML
+    try:
+        yaml.safe_load(data)
+        return 'yaml'
+    except yaml.YAMLError:
+        pass
+
+    # Check for Terraform
+    if 'resource "aws_security_group"' in data:
+        return 'terraform'
+
+    return 'unknown'
+
+def parse_input(data):
+    format = detect_format(data)
+    if format == 'json':
+        return parse_json(data)
+    elif format == 'yaml':
+        return parse_yaml(data)
+    elif format == 'terraform':
+        return parse_terraform(data)
+    else:
+        st.error("Unable to detect the input format. Please ensure it's valid JSON, YAML, or Terraform.")
         return None
 
 def main():
-    st.title("Simple Security Group Public Ingress Checker")
+    st.title("Security Group Public Ingress Checker")
+    st.write("Supports JSON, YAML, and Terraform formats")
 
-    json_data = st.text_area("Paste your Security Group JSON data here:", height=300)
+    input_data = st.text_area("Paste your Security Group configuration here:", height=300)
     
     if st.button("Analyze Security Group"):
-        if json_data:
-            security_groups = parse_security_group_json(json_data)
+        if input_data:
+            security_groups = parse_input(input_data)
             if security_groups:
                 all_issues = []
                 for sg in security_groups:
@@ -54,7 +123,7 @@ def main():
                 else:
                     st.success("No public ingress rules found.")
         else:
-            st.error("Please enter some JSON data.")
+            st.error("Please enter some configuration data.")
 
 if __name__ == "__main__":
     main()
