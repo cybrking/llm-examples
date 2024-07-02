@@ -6,6 +6,7 @@ import re
 def check_security_group(security_group):
     issues = []
     group_name = security_group.get('Properties', {}).get('GroupName', 'Unknown Group')
+    group_description = security_group.get('Properties', {}).get('GroupDescription', '')
     
     ingress_rules = security_group.get('Properties', {}).get('SecurityGroupIngress', [])
     egress_rules = security_group.get('Properties', {}).get('SecurityGroupEgress', [])
@@ -15,77 +16,108 @@ def check_security_group(security_group):
     if not isinstance(egress_rules, list):
         egress_rules = [egress_rules]
 
-    # Check for default security group
-    if group_name.lower() == 'default':
-        issues.append({
-            "Group Name": group_name,
-            "Issue": "Using default security group",
-            "Recommendation": "Create a new security group instead of using the default one",
-            "Risk": "High"
-        })
+    # Check naming and documentation
+    check_naming_and_documentation(group_name, group_description, issues)
 
     # Check ingress rules
     for rule in ingress_rules:
-        check_rule(rule, 'ingress', group_name, issues)
+        check_ingress_rule(rule, group_name, issues)
 
     # Check egress rules
     for rule in egress_rules:
-        check_rule(rule, 'egress', group_name, issues)
+        check_egress_rule(rule, group_name, issues)
 
-    # Check for large port ranges
-    check_large_port_ranges(ingress_rules + egress_rules, group_name, issues)
+    # Context-aware checks
+    check_context_aware_rules(ingress_rules, egress_rules, group_name, issues)
 
     return issues
 
-def check_rule(rule, direction, group_name, issues):
+def check_naming_and_documentation(group_name, group_description, issues):
+    if len(group_name) < 5 or not re.match(r'^[a-zA-Z]', group_name):
+        issues.append({
+            "Group Name": group_name,
+            "Issue": "Non-descriptive naming",
+            "Recommendation": "Use clear, descriptive names for security groups",
+            "Risk": "Low"
+        })
+    
+    if not group_description or len(group_description) < 10:
+        issues.append({
+            "Group Name": group_name,
+            "Issue": "Insufficient documentation",
+            "Recommendation": "Provide a detailed description for the security group",
+            "Risk": "Low"
+        })
+
+def check_ingress_rule(rule, group_name, issues):
     from_port = rule.get('FromPort')
     to_port = rule.get('ToPort')
     protocol = rule.get('IpProtocol')
     cidr = rule.get('CidrIp')
     source_sg = rule.get('SourceSecurityGroupId')
 
-    # Check for overly permissive rules
     if cidr == '0.0.0.0/0':
+        if from_port not in [80, 443]:
+            issues.append({
+                "Group Name": group_name,
+                "Issue": "Overly permissive ingress rule",
+                "Details": f"Protocol: {protocol}, Ports: {from_port}-{to_port}, Source: {cidr}",
+                "Recommendation": "Restrict to specific IP ranges or use security groups as sources",
+                "Risk": "High"
+            })
+    
+    if from_port == 22 and cidr == '0.0.0.0/0':
         issues.append({
             "Group Name": group_name,
-            "Issue": f"Overly permissive {direction} rule",
-            "Details": f"Protocol: {protocol}, Ports: {from_port}-{to_port}, Source: {cidr}",
-            "Recommendation": "Restrict to specific IP ranges or use security groups as sources",
+            "Issue": "SSH open to the world",
+            "Recommendation": "Restrict SSH access to specific IP ranges (e.g., corporate IP addresses)",
             "Risk": "High"
         })
 
-    # Check for all ports open
-    if from_port == 0 and to_port == 65535:
-        issues.append({
-            "Group Name": group_name,
-            "Issue": f"All ports open in {direction} rule",
-            "Details": f"Protocol: {protocol}, Source: {cidr or source_sg}",
-            "Recommendation": "Specify required ports instead of allowing all",
-            "Risk": "High"
-        })
+def check_egress_rule(rule, group_name, issues):
+    from_port = rule.get('FromPort')
+    to_port = rule.get('ToPort')
+    protocol = rule.get('IpProtocol')
+    cidr = rule.get('CidrIp')
 
-    # Check for security groups as sources (best practice)
-    if direction == 'ingress' and not source_sg:
+    if cidr == '0.0.0.0/0' and protocol == '-1':
         issues.append({
             "Group Name": group_name,
-            "Issue": "IP range used instead of security group",
-            "Details": f"Protocol: {protocol}, Ports: {from_port}-{to_port}, Source: {cidr}",
-            "Recommendation": "Use security groups as sources where applicable",
+            "Issue": "Unrestricted egress traffic",
+            "Recommendation": "Limit outbound traffic to required destinations and protocols",
             "Risk": "Medium"
         })
 
-def check_large_port_ranges(rules, group_name, issues):
-    for rule in rules:
-        from_port = rule.get('FromPort')
-        to_port = rule.get('ToPort')
-        if from_port and to_port and (to_port - from_port) > 100:
+def check_context_aware_rules(ingress_rules, egress_rules, group_name, issues):
+    # Web Application checks
+    web_ports = [rule for rule in ingress_rules if rule.get('FromPort') in [80, 443]]
+    if not web_ports:
+        issues.append({
+            "Group Name": group_name,
+            "Issue": "Web ports not open",
+            "Recommendation": "For web applications, allow HTTP (80) and HTTPS (443) traffic",
+            "Risk": "Medium"
+        })
+
+    # Database Instance checks
+    db_ports = [3306, 5432, 1433]  # MySQL, PostgreSQL, MSSQL
+    for port in db_ports:
+        if any(rule.get('FromPort') == port and rule.get('CidrIp') == '0.0.0.0/0' for rule in ingress_rules):
             issues.append({
                 "Group Name": group_name,
-                "Issue": "Large port range",
-                "Details": f"Ports: {from_port}-{to_port}",
-                "Recommendation": "Minimize port range to necessary ports only",
-                "Risk": "Medium"
+                "Issue": f"Database port {port} open to the world",
+                "Recommendation": "Restrict database access to specific application servers",
+                "Risk": "High"
             })
+
+    # Microservices checks
+    if len(ingress_rules) > 10:
+        issues.append({
+            "Group Name": group_name,
+            "Issue": "High number of ingress rules",
+            "Recommendation": "For microservices, consider using separate security groups for different services",
+            "Risk": "Medium"
+        })
 
 def parse_input(data):
     try:
@@ -107,9 +139,9 @@ def parse_input(data):
         return None
 
 def main():
-    st.set_page_config(page_title="AWS Security Group Best Practices Analyzer", layout="wide")
+    st.set_page_config(page_title="Comprehensive AWS Security Group Best Practices Analyzer", layout="wide")
     
-    st.title("AWS Security Group Best Practices Analyzer")
+    st.title("Comprehensive AWS Security Group Best Practices Analyzer")
     st.write("Paste your CloudFormation template (YAML format) below")
 
     input_data = st.text_area("CloudFormation Template:", height=300)
@@ -130,8 +162,8 @@ def main():
                     
                     # Apply color to the Risk column
                     def color_risk(val):
-                        color = 'red' if val == 'High' else 'orange' if val == 'Medium' else 'green'
-                        return f'background-color: {color}; color: white'
+                        color = 'red' if val == 'High' else 'orange' if val == 'Medium' else 'yellow'
+                        return f'background-color: {color}; color: black'
 
                     styled_df = df.style.applymap(color_risk, subset=['Risk'])
                     
