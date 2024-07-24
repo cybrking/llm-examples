@@ -1,49 +1,60 @@
 import streamlit as st
 from transformers import pipeline
-from dotenv import load_dotenv
+import sqlite3
 import os
+from dotenv import load_dotenv
 
-# Directly set the environment variable
-os.environ["HUGGINGFACE_TOKEN"] = "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"
+# Load environment variables
+load_dotenv()
 
 # Retrieve the token from the environment variables
 token = os.getenv("HUGGINGFACE_TOKEN")
 if not token:
-    raise ValueError("Hugging Face token not found in environment variables")
+    st.error("Hugging Face token not found in environment variables")
+    st.stop()
 
-# Use the token to load the model
-model = pipeline("meta-llama/Meta-Llama-3-8B", token=token)
+# Use a publicly available model
+model_name = "distilbert-base-uncased-finetuned-sst-2-english"
 
-# Initialize the RAG AI model
-rag_model = pipeline('text-generation', model='meta-llama/Meta-Llama-3-8B')
+# Initialize the model
+try:
+    model = pipeline("text-classification", model=model_name, token=token)
+except Exception as e:
+    st.error(f"Error loading the model: {str(e)}")
+    st.stop()
 
 # Initialize SQLite database
 conn = sqlite3.connect('ideas.db')
 c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS ideas (id INTEGER PRIMARY KEY, idea TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS ideas 
+             (id INTEGER PRIMARY KEY, idea TEXT, sentiment TEXT)''')
 conn.commit()
 
 # Streamlit App
-st.title('Cybersecurity Guidance App')
+st.title('Idea Sentiment Analysis App')
 
 # Idea Submission Form
 idea = st.text_area("Submit Your Idea")
 if st.button('Submit'):
     if idea:
-        c.execute("INSERT INTO ideas (idea) VALUES (?)", (idea,))
+        # Analyze sentiment
+        result = model(idea)[0]
+        sentiment = result['label']
+        
+        # Store in database
+        c.execute("INSERT INTO ideas (idea, sentiment) VALUES (?, ?)", (idea, sentiment))
         conn.commit()
-        st.success("Idea submitted successfully!")
+        
+        st.success(f"Idea submitted successfully! Sentiment: {sentiment}")
     else:
         st.warning("Please enter an idea.")
 
-# Generate Cybersecurity Guidance
-if st.button('Generate Guidance'):
-    if idea:
-        guidance = rag_model(idea, max_length=100, num_return_sequences=1)
-        st.write("Cybersecurity Guidance:")
-        st.write(guidance[0]['generated_text'])
-    else:
-        st.warning("Please submit an idea first.")
+# Display stored ideas
+st.subheader("Submitted Ideas")
+for row in c.execute("SELECT idea, sentiment FROM ideas"):
+    st.write(f"Idea: {row[0]}")
+    st.write(f"Sentiment: {row[1]}")
+    st.write("---")
 
 # Close the database connection
 conn.close()
