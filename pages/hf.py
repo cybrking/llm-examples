@@ -14,11 +14,11 @@ if not token:
     st.stop()
 
 # Use a publicly available model
-model_name = "distilbert-base-uncased-finetuned-sst-2-english"
+model_name = "deepseek-ai/DeepSeek-V2-Lite-Chat"
 
 # Initialize the model
 try:
-    model = pipeline("text-classification", model=model_name, token=token)
+    model = pipeline("text-generation", model=model_name, token=token)
 except Exception as e:
     st.error(f"Error loading the model: {str(e)}")
     st.stop()
