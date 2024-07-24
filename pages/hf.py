@@ -4,11 +4,18 @@ from dotenv import load_dotenv
 import os
 
 #Authenticate to Hugging Face
-load_dotenv()
+import os
+from transformers import pipeline
+
+# Directly set the environment variable
+os.environ["HUGGINGFACE_TOKEN"] = "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"
+
+# Retrieve the token from the environment variables
 token = os.getenv("HUGGINGFACE_TOKEN")
 if not token:
     raise ValueError("Hugging Face token not found in environment variables")
 
+# Use the token to load the model
 model = pipeline("cmeta-llama/Meta-Llama-3-8B", token=token)
 
 # Initialize the RAG AI model
