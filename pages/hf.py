@@ -17,7 +17,8 @@ model, tokenizer = load_model()
 def init_db():
     conn = sqlite3.connect('ideas.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS ideas 
+    c.execute('''DROP TABLE IF EXISTS ideas''')  # Drop the table if it exists
+    c.execute('''CREATE TABLE ideas 
                  (id INTEGER PRIMARY KEY, idea TEXT, guidance TEXT)''')
     conn.commit()
     return conn, c
