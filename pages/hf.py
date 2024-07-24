@@ -1,5 +1,15 @@
 import streamlit as st
 from transformers import pipeline
+from dotenv import load_dotenv
+import os
+
+#Authenticate to Hugging Face
+load_dotenv()
+token = os.getenv("HUGGINGFACE_TOKEN")
+if not token:
+    raise ValueError("Hugging Face token not found in environment variables")
+
+model = pipeline("cmeta-llama/Meta-Llama-3-8B", token=token)
 
 # Initialize the RAG AI model
 rag_model = pipeline('text-generation', model='cmeta-llama/Meta-Llama-3-8B')
