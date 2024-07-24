@@ -1,5 +1,4 @@
 import streamlit as st
-import sqlite3
 from transformers import pipeline
 
 # Initialize the RAG AI model
