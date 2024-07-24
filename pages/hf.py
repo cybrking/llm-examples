@@ -1,18 +1,13 @@
 import streamlit as st
-from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
+from transformers import pipeline
 import sqlite3
-import os
-from dotenv import load_dotenv
 
-
-# Use the DeepSeek-V2-Lite-Chat model
-model_name = "deepseek-ai/DeepSeek-V2-Lite-Chat"
+# Use a publicly available model that doesn't require authentication
+model_name = "distilbert-base-uncased-finetuned-sst-2-english"
 
 # Initialize the model
 try:
-    tokenizer = AutoTokenizer.from_pretrained(model_name, token=token, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(model_name, token=token, trust_remote_code=True)
-    generator = pipeline("text-generation", model=model, tokenizer=tokenizer)
+    classifier = pipeline("sentiment-analysis", model=model_name)
 except Exception as e:
     st.error(f"Error loading the model: {str(e)}")
     st.stop()
@@ -21,35 +16,36 @@ except Exception as e:
 conn = sqlite3.connect('ideas.db')
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS ideas 
-             (id INTEGER PRIMARY KEY, idea TEXT, response TEXT)''')
+             (id INTEGER PRIMARY KEY, idea TEXT, sentiment TEXT)''')
 conn.commit()
 
 # Streamlit App
-st.title('Cybersecurity Idea Analysis App')
+st.title('Cybersecurity Idea Sentiment Analysis')
 
 # Idea Submission Form
 idea = st.text_area("Submit Your Cybersecurity Idea")
 if st.button('Analyze'):
     if idea:
-        # Generate response
-        prompt = f"Analyze this cybersecurity idea and provide feedback: {idea}"
-        response = generator(prompt, max_length=200, num_return_sequences=1)[0]['generated_text']
+        # Analyze sentiment
+        result = classifier(idea)[0]
+        sentiment = result['label']
+        score = result['score']
         
         # Store in database
-        c.execute("INSERT INTO ideas (idea, response) VALUES (?, ?)", (idea, response))
+        c.execute("INSERT INTO ideas (idea, sentiment) VALUES (?, ?)", (idea, sentiment))
         conn.commit()
         
         st.success("Idea analyzed successfully!")
-        st.write("Analysis:")
-        st.write(response)
+        st.write(f"Sentiment: {sentiment}")
+        st.write(f"Confidence: {score:.2f}")
     else:
         st.warning("Please enter an idea.")
 
 # Display stored ideas
 st.subheader("Previously Analyzed Ideas")
-for row in c.execute("SELECT idea, response FROM ideas"):
+for row in c.execute("SELECT idea, sentiment FROM ideas"):
     st.write(f"Idea: {row[0]}")
-    st.write(f"Analysis: {row[1]}")
+    st.write(f"Sentiment: {row[1]}")
     st.write("---")
 
 # Close the database connection
