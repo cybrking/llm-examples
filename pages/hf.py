@@ -1,13 +1,12 @@
 import streamlit as st
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
 import sqlite3
-import torch
 
 # Load model and tokenizer
 @st.cache_resource
 def load_model():
-    model = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-V2-Lite-Chat", trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-V2-Lite-Chat", trust_remote_code=True)
+    model = GPT2LMHeadModel.from_pretrained("gpt2")
+    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     return model, tokenizer
 
 model, tokenizer = load_model()
@@ -21,9 +20,8 @@ conn.commit()
 
 # Function to generate response
 def generate_response(prompt):
-    inputs = tokenizer(prompt, return_tensors="pt")
-    with torch.no_grad():
-        outputs = model.generate(**inputs, max_length=200, num_return_sequences=1)
+    inputs = tokenizer.encode(prompt, return_tensors="pt")
+    outputs = model.generate(inputs, max_length=150, num_return_sequences=1, no_repeat_ngram_size=2)
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return response
 
@@ -35,7 +33,7 @@ idea = st.text_area("Submit Your Cybersecurity Idea")
 if st.button('Analyze'):
     if idea:
         # Generate response
-        prompt = f"Analyze this cybersecurity idea and provide feedback: {idea}"
+        prompt = f"Analyze this cybersecurity idea: {idea}\nAnalysis:"
         response = generate_response(prompt)
         
         # Store in database
