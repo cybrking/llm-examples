@@ -1,6 +1,7 @@
 import streamlit as st
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 import sqlite3
+import time
 
 # Load model and tokenizer
 @st.cache_resource
@@ -13,11 +14,13 @@ def load_model():
 model, tokenizer = load_model()
 
 # Initialize SQLite database
-conn = sqlite3.connect('ideas.db')
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS ideas 
-             (id INTEGER PRIMARY KEY, idea TEXT, guidance TEXT)''')
-conn.commit()
+def init_db():
+    conn = sqlite3.connect('ideas.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS ideas 
+                 (id INTEGER PRIMARY KEY, idea TEXT, guidance TEXT)''')
+    conn.commit()
+    return conn, c
 
 # Cybersecurity expert guidance prompt
 EXPERT_PROMPT = """
@@ -58,25 +61,29 @@ st.title('Cybersecurity Expert Guidance')
 idea = st.text_area("Submit Your Cybersecurity Idea or Question")
 if st.button('Get Guidance'):
     if idea:
-        # Generate guidance
-        guidance = generate_guidance(idea)
-        
-        # Store in database
-        c.execute("INSERT INTO ideas (idea, guidance) VALUES (?, ?)", (idea, guidance))
-        conn.commit()
-        
-        st.success("Guidance generated successfully!")
-        st.write("Expert Guidance:")
-        st.write(guidance)
+        with st.spinner("Generating guidance..."):
+            try:
+                guidance = generate_guidance(idea)
+                conn, c = init_db()
+                c.execute("INSERT INTO ideas (idea, guidance) VALUES (?, ?)", (idea, guidance))
+                conn.commit()
+                st.success("Guidance generated successfully!")
+                st.write("Expert Guidance:")
+                st.write(guidance)
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+            finally:
+                conn.close()
     else:
         st.warning("Please enter an idea or question.")
 
 # Display stored ideas
 st.subheader("Previously Submitted Ideas")
-for row in c.execute("SELECT idea, guidance FROM ideas"):
-    st.write(f"Idea: {row[0]}")
-    st.write(f"Expert Guidance: {row[1]}")
-    st.write("---")
-
-# Close the database connection
-conn.close()
+try:
+    conn, c = init_db()
+    for row in c.execute("SELECT idea, guidance FROM ideas"):
+        st.write(f"Idea: {row[0]}")
+        st.write(f"Expert Guidance: {row[1]}")
+        st.write("---")
+finally:
+    conn.close()
