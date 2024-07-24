@@ -16,10 +16,10 @@ if not token:
     raise ValueError("Hugging Face token not found in environment variables")
 
 # Use the token to load the model
-model = pipeline("cmeta-llama/Meta-Llama-3-8B", token=token)
+model = pipeline("meta-llama/Meta-Llama-3-8B", token=token)
 
 # Initialize the RAG AI model
-rag_model = pipeline('text-generation', model='cmeta-llama/Meta-Llama-3-8B')
+rag_model = pipeline('text-generation', model='meta-llama/Meta-Llama-3-8B')
 
 # Initialize SQLite database
 conn = sqlite3.connect('ideas.db')
