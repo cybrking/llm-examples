@@ -3,10 +3,6 @@ from transformers import pipeline
 from dotenv import load_dotenv
 import os
 
-#Authenticate to Hugging Face
-import os
-from transformers import pipeline
-
 # Directly set the environment variable
 os.environ["HUGGINGFACE_TOKEN"] = "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"
 
