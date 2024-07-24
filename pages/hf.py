@@ -4,14 +4,6 @@ import sqlite3
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
-# Retrieve the token from the environment variables
-token = os.getenv("HUGGINGFACE_TOKEN")
-if not token:
-    st.error("Hugging Face token not found in environment variables")
-    st.stop()
 
 # Use the DeepSeek-V2-Lite-Chat model
 model_name = "deepseek-ai/DeepSeek-V2-Lite-Chat"
