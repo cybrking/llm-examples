@@ -1,96 +1,117 @@
 import streamlit as st
+import json
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
-import json
 
 # Load the model and tokenizer
 @st.cache_resource
 def load_model():
-    model_name = "EleutherAI/gpt-neo-1.3B"  # You can change this to Meta-Llama if you have access
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    MODEL_NAME = "meta-llama/Llama-3.1-8B"  # Adjust if the exact model name is different
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto")
     return tokenizer, model
 
 tokenizer, model = load_model()
 
-def analyze_with_llm(sg_config):
-    formatted_rules = format_rules_for_llm(sg_config)
+def analyze_security_groups(security_groups):
+    # Prepare the prompt for the model
+    prompt = "Analyze the following AWS security group configurations for anomalies and potential risks. Identify unusual patterns or risky configurations across the groups:\n\n"
     
-    prompt = f"""
-    Analyze the following AWS security group rules and provide insights on potential vulnerabilities or misconfigurations. 
-    Also suggest improvements based on best practices. Be concise but thorough.
+    for i, sg in enumerate(security_groups):
+        prompt += f"Security Group {i+1}:\n"
+        prompt += json.dumps(sg, indent=2) + "\n\n"
+    
+    prompt += "Provide a detailed analysis of anomalies and risks, focusing on:\n"
+    prompt += "1. Unusual open ports or protocols\n"
+    prompt += "2. Overly permissive rules (e.g., 0.0.0.0/0)\n"
+    prompt += "3. Inconsistencies across security groups\n"
+    prompt += "4. Potential misconfigurations\n"
+    prompt += "5. Deviations from best practices\n\n"
+    prompt += "Analysis:"
 
-    Security Group Rules:
-    {formatted_rules}
+    # Generate the analysis
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    outputs = model.generate(inputs.input_ids, max_length=1000, num_return_sequences=1, temperature=0.7)
+    analysis = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-    Please provide your analysis in the following format:
-    1. Potential Vulnerabilities:
-    2. Misconfigurations:
-    3. Suggested Improvements:
-    """
-
-    inputs = tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
-    
-    with torch.no_grad():
-        outputs = model.generate(
-            inputs.input_ids,
-            max_length=1000,
-            num_return_sequences=1,
-            temperature=0.7,
-        )
-    
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    
-    # Extract the analysis part from the response
-    analysis_start = response.find("1. Potential Vulnerabilities:")
-    if analysis_start != -1:
-        analysis = response[analysis_start:]
-    else:
-        analysis = "Unable to generate a structured analysis. Here's the raw output:\n" + response
+    # Extract the generated analysis (remove the input prompt)
+    analysis = analysis.split("Analysis:")[-1].strip()
 
     return analysis
 
-def format_rules_for_llm(sg_config):
-    formatted_rules = "Inbound Rules:\n"
-    for rule in sg_config.get("IpPermissions", []):
-        protocol = rule.get("IpProtocol", "All")
-        from_port = rule.get("FromPort", "Any")
-        to_port = rule.get("ToPort", "Any")
-        for ip_range in rule.get("IpRanges", []):
-            cidr = ip_range.get("CidrIp", "Any")
-            formatted_rules += f"- {protocol} {from_port}-{to_port} from {cidr}\n"
-    
-    formatted_rules += "\nOutbound Rules:\n"
-    for rule in sg_config.get("IpPermissionsEgress", []):
-        protocol = rule.get("IpProtocol", "All")
-        from_port = rule.get("FromPort", "Any")
-        to_port = rule.get("ToPort", "Any")
-        for ip_range in rule.get("IpRanges", []):
-            cidr = ip_range.get("CidrIp", "Any")
-            formatted_rules += f"- {protocol} {from_port}-{to_port} to {cidr}\n"
-    
-    return formatted_rules
+def main():
+    st.set_page_config(page_title="Security Group Anomaly Detector", layout="wide")
+    st.title("Security Group Anomaly Detector")
 
-def llm_analyzer_page():
-    st.title("LLM-Powered Security Group Analyzer")
+    st.write("Analyze multiple AWS security group configurations to detect anomalies and potential risks.")
 
-    uploaded_file = st.file_uploader("Choose a security group configuration file", type=["json"])
-    
+    # File uploader for JSON input
+    uploaded_file = st.file_uploader("Upload JSON file with Security Group Configurations", type=["json"])
+
     if uploaded_file is not None:
-        file_contents = uploaded_file.getvalue().decode("utf-8")
         try:
-            sg_config = json.loads(file_contents)
-            
-            st.subheader(f"Security Group: {sg_config.get('GroupName', 'Unnamed')}")
-            
-            if st.button("Analyze Security Group with LLM"):
-                with st.spinner("Analyzing security group with LLM..."):
-                    llm_analysis = analyze_with_llm(sg_config)
-                st.subheader("LLM Analysis")
-                st.write(llm_analysis)
+            security_groups = json.load(uploaded_file)
+            st.subheader("Uploaded Security Group Configurations:")
+            st.json(security_groups)
 
+            if st.button("Analyze Security Groups"):
+                with st.spinner("Analyzing security groups..."):
+                    analysis = analyze_security_groups(security_groups)
+                
+                st.subheader("Anomaly Detection Analysis:")
+                st.write(analysis)
+
+        except json.JSONDecodeError:
+            st.error("Error: Invalid JSON file. Please upload a valid JSON file.")
         except Exception as e:
-            st.error(f"An error occurred while processing the file: {str(e)}")
+            st.error(f"An error occurred: {str(e)}")
+
+    # Example JSON input
+    st.subheader("Example JSON Input:")
+    example_json = '''
+    [
+      {
+        "GroupName": "WebServerSG",
+        "IpPermissions": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "IpRanges": [{"CidrIp": "10.0.0.0/8"}]
+          }
+        ]
+      },
+      {
+        "GroupName": "DatabaseSG",
+        "IpPermissions": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 3306,
+            "ToPort": 3306,
+            "IpRanges": [{"CidrIp": "10.0.0.0/16"}]
+          }
+        ]
+      },
+      {
+        "GroupName": "UnusualSG",
+        "IpPermissions": [
+          {
+            "IpProtocol": "-1",
+            "FromPort": -1,
+            "ToPort": -1,
+            "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
+          }
+        ]
+      }
+    ]
+    '''
+    st.code(example_json, language="json")
 
 if __name__ == "__main__":
-    llm_analyzer_page()
+    main()
