@@ -17,9 +17,12 @@ def query_huggingface(payload):
         response = requests.post(API_URL, headers=headers, json=payload)
         response.raise_for_status()
         return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        st.error(f"HTTP error occurred: {http_err}")
+        st.write(f"Response content: {response.content}")
     except requests.exceptions.RequestException as e:
         st.error(f"Error querying Hugging Face API: {str(e)}")
-        return None
+    return None
 
 def get_response(user_input):
     prompt = f"""Human: In the context of AWS security groups, {user_input}"""
