@@ -18,7 +18,7 @@ headers = {"Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}"}
 def query_huggingface(payload):
     try:
         response = requests.post(API_URL, headers=headers, json=payload)
-        response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
+        response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"Error querying Hugging Face API: {str(e)}")
@@ -45,18 +45,18 @@ def get_response(user_input):
     
     # If not, use Hugging Face model
     payload = {
-        "inputs": f"Human: {user_input}\nAI: Let me help you with that. In the context of AWS security groups,",
+        "inputs": f"In the context of AWS security groups, {user_input}",
         "max_length": 100,
         "temperature": 0.7,
         "top_p": 0.9,
+        "return_full_text": False
     }
     response = query_huggingface(payload)
     if response is None or not isinstance(response, list) or len(response) == 0:
         return "I'm sorry, I couldn't generate a response at this time. Can you try asking your question in a different way?"
     
     generated_text = response[0].get('generated_text', '')
-    ai_response = generated_text.split("AI: ")[-1] if "AI: " in generated_text else generated_text
-    return ai_response
+    return generated_text.strip()
 
 def analyze_security_group(config):
     try:
