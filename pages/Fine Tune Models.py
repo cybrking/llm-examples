@@ -1,46 +1,36 @@
 import streamlit as st
+import numpy as np
 import pandas as pd
-from fine_tuning_utils import preprocess_data, fine_tune_model, evaluate_model
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
 
-st.title("Model Fine-Tuning App")
+def main():
+    st.title("Fine-Tuning App")
 
-# Data upload
-uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-if uploaded_file is not None:
-    data = pd.read_csv(uploaded_file)
-    st.write(data.head())
+    # Example: Load a dataset
+    data = pd.read_csv('your_dataset.csv')
+    X = data.drop('target', axis=1)
+    y = data['target']
 
-    # Preprocessing
-    if st.button("Preprocess Data"):
-        preprocessed_data = preprocess_data(data)
-        st.session_state.preprocessed_data = preprocessed_data
-        st.success("Data preprocessed successfully!")
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Hyperparameter inputs
-    learning_rate = st.number_input("Learning Rate", min_value=0.0001, max_value=0.1, value=0.001, format="%.4f")
-    num_epochs = st.number_input("Number of Epochs", min_value=1, max_value=100, value=3)
+    # Allow user to adjust parameters
+    st.sidebar.header("Fine-Tuning Parameters")
+    n_estimators = st.sidebar.slider("Number of Estimators", 10, 200, 100)
+    max_depth = st.sidebar.slider("Max Depth", 1, 20, 10)
 
-    # Fine-tuning
-    if st.button("Start Fine-Tuning") and 'preprocessed_data' in st.session_state:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        fine_tuned_model = fine_tune_model(st.session_state.preprocessed_data, learning_rate, num_epochs)
-        
-        st.session_state.fine_tuned_model = fine_tuned_model
-        st.success("Fine-tuning completed!")
+    # Train the model
+    model = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth)
+    model.fit(X_train, y_train)
 
-        # Evaluation
-        eval_results = evaluate_model(fine_tuned_model, st.session_state.preprocessed_data)
-        st.write("Evaluation Results:", eval_results)
+    # Evaluate the model
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
 
-# Inference with fine-tuned model
-st.subheader("Try the Fine-Tuned Model")
-user_input = st.text_input("Enter text for inference")
-if user_input and 'fine_tuned_model' in st.session_state:
-    # Implement inference logic
-    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
-    inputs = tokenizer(user_input, return_tensors="pt")
-    outputs = st.session_state.fine_tuned_model(**inputs)
-    predicted_class = torch.argmax(outputs.logits).item()
-    st.write("Predicted Class:", predicted_class)
+    # Display results
+    st.write(f"Accuracy: {accuracy:.2f}")
+
+if __name__ == "__main__":
+    main()
