@@ -2,46 +2,59 @@ import streamlit as st
 import json
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
-from dotenv import load_dotenv
-import os
+from huggingface_hub import HfApi, HfFolder
 
-# Load environment variables
-load_dotenv()
-
-# Load the model and tokenizer
 @st.cache_resource
 def load_model():
-    MODEL_NAME = "meta-llama/Llama-3.1-8B"  # Adjust if the exact model name is different
-    auth_token = os.getenv("HUGGINGFACE_TOKEN")
+    MODEL_NAME = "meta-llama/Meta-Llama-3.1-8B"  # Your desired model name
+    FALLBACK_MODEL = "meta-llama/Llama-2-7b-chat-hf"  # A fallback model
     
-    if not auth_token:
-        st.error("Hugging Face authentication token not found. Please set the HUGGINGFACE_TOKEN environment variable.")
-        st.stop()
-
     try:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_auth_token=auth_token)
-        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto", use_auth_token=auth_token)
+        # Try to get the token from Hugging Face CLI
+        token = HfFolder.get_token()
+        if token is None:
+            raise ValueError("No Hugging Face token found. Please run `huggingface-cli login`")
+
+        # Check if the model exists and is accessible
+        api = HfApi()
+        try:
+            model_info = api.model_info(MODEL_NAME, token=token)
+            st.success(f"Successfully accessed model info for {MODEL_NAME}")
+        except Exception as e:
+            st.warning(f"Couldn't access {MODEL_NAME}. Error: {str(e)}")
+            st.warning(f"Falling back to {FALLBACK_MODEL}")
+            MODEL_NAME = FALLBACK_MODEL
+
+        # Load the model and tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_auth_token=token)
+        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto", use_auth_token=token)
+        
         return tokenizer, model
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
+        st.error("Make sure you're logged in with `huggingface-cli login` and have access to the required model.")
         st.stop()
 
 tokenizer, model = load_model()
 
 def analyze_security_groups(security_groups):
-    prompt = "Analyze the following AWS security group configurations for anomalies and potential risks. Identify unusual patterns or risky configurations across the groups:\n\n"
+    prompt = """<s>[INST] Analyze the following AWS security group configurations for anomalies and potential risks. Identify unusual patterns or risky configurations across the groups:
+
+    """
     
     for i, sg in enumerate(security_groups):
         prompt += f"Security Group {i+1}:\n"
         prompt += json.dumps(sg, indent=2) + "\n\n"
     
-    prompt += "Provide a detailed analysis of anomalies and risks, focusing on:\n"
-    prompt += "1. Unusual open ports or protocols\n"
-    prompt += "2. Overly permissive rules (e.g., 0.0.0.0/0)\n"
-    prompt += "3. Inconsistencies across security groups\n"
-    prompt += "4. Potential misconfigurations\n"
-    prompt += "5. Deviations from best practices\n\n"
-    prompt += "Analysis:"
+    prompt += """Provide a detailed analysis of anomalies and risks, focusing on:
+    1. Unusual open ports or protocols
+    2. Overly permissive rules (e.g., 0.0.0.0/0)
+    3. Inconsistencies across security groups
+    4. Potential misconfigurations
+    5. Deviations from best practices
+
+    [/INST]
+    """
 
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     
@@ -55,7 +68,7 @@ def analyze_security_groups(security_groups):
         )
     
     analysis = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    analysis = analysis.split("Analysis:")[-1].strip()
+    analysis = analysis.split("[/INST]")[-1].strip()
 
     return analysis
 
