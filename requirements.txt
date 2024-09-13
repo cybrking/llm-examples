@@ -8,3 +8,5 @@ streamlit-feedback
 transformers==4.34.0
 python-dotenv==1.0.0
 torch==2.0.1
+
+huggingface-hub==0.17.3
