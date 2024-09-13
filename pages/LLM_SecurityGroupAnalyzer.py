@@ -16,8 +16,13 @@ API_URL = "https://api-inference.huggingface.co/models/gpt2-large"
 headers = {"Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}"}
 
 def query_huggingface(payload):
-    response = requests.post(API_URL, headers=headers, json=payload)
-    return response.json()
+    try:
+        response = requests.post(API_URL, headers=headers, json=payload)
+        response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error querying Hugging Face API: {str(e)}")
+        return None
 
 # Define patterns and responses
 patterns = {
@@ -46,7 +51,11 @@ def get_response(user_input):
         "top_p": 0.9,
     }
     response = query_huggingface(payload)
-    ai_response = response[0]['generated_text'].split("AI: ")[-1]
+    if response is None or not isinstance(response, list) or len(response) == 0:
+        return "I'm sorry, I couldn't generate a response at this time. Can you try asking your question in a different way?"
+    
+    generated_text = response[0].get('generated_text', '')
+    ai_response = generated_text.split("AI: ")[-1] if "AI: " in generated_text else generated_text
     return ai_response
 
 def analyze_security_group(config):
