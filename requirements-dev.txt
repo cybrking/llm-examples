@@ -8,3 +8,6 @@ pyyaml
 pandas
 transformers
 torch
+streamlit
+requests
+python-dotenv
