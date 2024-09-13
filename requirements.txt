@@ -6,4 +6,5 @@ anthropic>=0.3.0
 trubrics>=1.4.3
 streamlit-feedback
 transformers==4.34.0
+python-dotenv==1.0.0
 torch==2.0.1
