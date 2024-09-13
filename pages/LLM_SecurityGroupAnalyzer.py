@@ -32,27 +32,29 @@ def get_response(user_input):
 # Streamlit app
 st.title("Chat with Hugging Face Model")
 
-# Get user input for the file path
-file_path = st.text_input("Enter the file path:")
+# File uploader
+uploaded_file = st.file_uploader("Upload a file", type=["txt", "py", "json", "md"])
 
-if file_path:
-    try:
-        with open(file_path, 'r') as file:
-            file_content = file.read()
-            st.write("File content:")
-            st.code(file_content)
-            
-            # Get user input for the prompt
-            user_input = st.text_input("Enter your prompt:")
-            
-            if user_input:
-                response = get_response(user_input)
-                if response:
-                    st.write("Model response:")
-                    st.write(response)
-                else:
-                    st.write("No response from the model.")
-    except FileNotFoundError:
-        st.error(f"File not found: {file_path}")
-    except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
+# Text area for copy and paste
+user_text = st.text_area("Or paste your text here")
+
+if uploaded_file:
+    file_content = uploaded_file.read().decode("utf-8")
+    st.write("File content:")
+    st.code(file_content)
+elif user_text:
+    file_content = user_text
+    st.write("Pasted content:")
+    st.code(file_content)
+
+if uploaded_file or user_text:
+    # Get user input for the prompt
+    user_input = st.text_input("Enter your prompt:")
+    
+    if user_input:
+        response = get_response(user_input)
+        if response:
+            st.write("Model response:")
+            st.write(response)
+        else:
+            st.write("No response from the model.")
