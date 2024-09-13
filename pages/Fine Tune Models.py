@@ -11,34 +11,36 @@ if uploaded_file is not None:
     st.write(data.head())
 
     # Preprocessing
-    preprocessed_data = preprocess_data(data)
+    if st.button("Preprocess Data"):
+        preprocessed_data = preprocess_data(data)
+        st.session_state.preprocessed_data = preprocessed_data
+        st.success("Data preprocessed successfully!")
 
     # Hyperparameter inputs
-    learning_rate = st.number_input("Learning Rate", min_value=0.0001, max_value=0.1, value=0.001)
-    num_epochs = st.number_input("Number of Epochs", min_value=1, max_value=100, value=10)
+    learning_rate = st.number_input("Learning Rate", min_value=0.0001, max_value=0.1, value=0.001, format="%.4f")
+    num_epochs = st.number_input("Number of Epochs", min_value=1, max_value=100, value=3)
 
     # Fine-tuning
-    if st.button("Start Fine-Tuning"):
+    if st.button("Start Fine-Tuning") and 'preprocessed_data' in st.session_state:
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        fine_tuned_model = fine_tune_model(preprocessed_data, learning_rate, num_epochs, 
-                                           progress_callback=progress_bar.progress,
-                                           status_callback=status_text.text)
+        fine_tuned_model = fine_tune_model(st.session_state.preprocessed_data, learning_rate, num_epochs)
         
-        # Evaluation
-        eval_results = evaluate_model(fine_tuned_model, preprocessed_data)
-        st.write("Evaluation Results:", eval_results)
+        st.session_state.fine_tuned_model = fine_tuned_model
+        st.success("Fine-tuning completed!")
 
-        # Save model option
-        if st.button("Save Fine-Tuned Model"):
-            # Implement save logic
-            st.success("Model saved successfully!")
+        # Evaluation
+        eval_results = evaluate_model(fine_tuned_model, st.session_state.preprocessed_data)
+        st.write("Evaluation Results:", eval_results)
 
 # Inference with fine-tuned model
 st.subheader("Try the Fine-Tuned Model")
 user_input = st.text_input("Enter text for inference")
-if user_input:
+if user_input and 'fine_tuned_model' in st.session_state:
     # Implement inference logic
-    output = fine_tuned_model.predict(user_input)
-    st.write("Model Output:", output)
+    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+    inputs = tokenizer(user_input, return_tensors="pt")
+    outputs = st.session_state.fine_tuned_model(**inputs)
+    predicted_class = torch.argmax(outputs.logits).item()
+    st.write("Predicted Class:", predicted_class)
