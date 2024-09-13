@@ -3,10 +3,10 @@ import random
 
 # Define some patterns and responses
 patterns = {
-    r'hi|hello|hey': ['Hello!', 'Hi there!', 'Hey!'],
-    r'how are you': ['I'm doing well, thanks!', 'I'm fine, how about you?'],
-    r'your name': ['I'm a simple chatbot.', 'You can call me ChatBot.'],
-    r'bye|goodbye': ['Goodbye!', 'See you later!', 'Bye!'],
+    'hi|hello|hey': ["Hello!", "Hi there!", "Hey!"],
+    'how are you': ["I'm doing well, thanks!", "I'm fine, how about you?"],
+    'your name': ["I'm a simple chatbot.", "You can call me ChatBot."],
+    'bye|goodbye': ["Goodbye!", "See you later!", "Bye!"],
 }
 
 def get_response(user_input):
