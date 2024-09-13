@@ -2,19 +2,33 @@ import streamlit as st
 import json
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
 
 # Load the model and tokenizer
 @st.cache_resource
 def load_model():
     MODEL_NAME = "meta-llama/Llama-3.1-8B"  # Adjust if the exact model name is different
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto")
-    return tokenizer, model
+    auth_token = os.getenv("HUGGINGFACE_TOKEN")
+    
+    if not auth_token:
+        st.error("Hugging Face authentication token not found. Please set the HUGGINGFACE_TOKEN environment variable.")
+        st.stop()
+
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_auth_token=auth_token)
+        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto", use_auth_token=auth_token)
+        return tokenizer, model
+    except Exception as e:
+        st.error(f"Error loading model: {str(e)}")
+        st.stop()
 
 tokenizer, model = load_model()
 
 def analyze_security_groups(security_groups):
-    # Prepare the prompt for the model
     prompt = "Analyze the following AWS security group configurations for anomalies and potential risks. Identify unusual patterns or risky configurations across the groups:\n\n"
     
     for i, sg in enumerate(security_groups):
@@ -29,12 +43,18 @@ def analyze_security_groups(security_groups):
     prompt += "5. Deviations from best practices\n\n"
     prompt += "Analysis:"
 
-    # Generate the analysis
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    outputs = model.generate(inputs.input_ids, max_length=1000, num_return_sequences=1, temperature=0.7)
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            inputs.input_ids, 
+            max_length=2000, 
+            num_return_sequences=1, 
+            temperature=0.7,
+            do_sample=True
+        )
+    
     analysis = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-    # Extract the generated analysis (remove the input prompt)
     analysis = analysis.split("Analysis:")[-1].strip()
 
     return analysis
@@ -45,7 +65,6 @@ def main():
 
     st.write("Analyze multiple AWS security group configurations to detect anomalies and potential risks.")
 
-    # File uploader for JSON input
     uploaded_file = st.file_uploader("Upload JSON file with Security Group Configurations", type=["json"])
 
     if uploaded_file is not None:
