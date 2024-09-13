@@ -1,39 +1,14 @@
 import streamlit as st
 import json
-from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
-from huggingface_hub import HfApi, HfFolder
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
+# Load model directly
 @st.cache_resource
 def load_model():
-    MODEL_NAME = "meta-llama/Meta-Llama-3.1-8B"  # Your desired model name
-    FALLBACK_MODEL = "meta-llama/Llama-2-7b-chat-hf"  # A fallback model
-    
-    try:
-        # Try to get the token from Hugging Face CLI
-        token = HfFolder.get_token()
-        if token is None:
-            raise ValueError("No Hugging Face token found. Please run `huggingface-cli login`")
-
-        # Check if the model exists and is accessible
-        api = HfApi()
-        try:
-            model_info = api.model_info(MODEL_NAME, token=token)
-            st.success(f"Successfully accessed model info for {MODEL_NAME}")
-        except Exception as e:
-            st.warning(f"Couldn't access {MODEL_NAME}. Error: {str(e)}")
-            st.warning(f"Falling back to {FALLBACK_MODEL}")
-            MODEL_NAME = FALLBACK_MODEL
-
-        # Load the model and tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_auth_token=token)
-        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16, device_map="auto", use_auth_token=token)
-        
-        return tokenizer, model
-    except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
-        st.error("Make sure you're logged in with `huggingface-cli login` and have access to the required model.")
-        st.stop()
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+    model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf", torch_dtype=torch.float16, device_map="auto")
+    return tokenizer, model
 
 tokenizer, model = load_model()
 
