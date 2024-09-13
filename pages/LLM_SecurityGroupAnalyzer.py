@@ -2,13 +2,23 @@ import streamlit as st
 import json
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+import os
 
-# Load model directly
+# Load model with token
 @st.cache_resource
 def load_model():
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
-    model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf", torch_dtype=torch.float16, device_map="auto")
-    return tokenizer, model
+    token = os.getenv("HUGGINGFACE_TOKEN")
+    if not token:
+        st.error("Hugging Face token not found. Please set the HUGGINGFACE_TOKEN environment variable.")
+        st.stop()
+    
+    try:
+        tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf", use_auth_token=token)
+        model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf", torch_dtype=torch.float16, device_map="auto", use_auth_token=token)
+        return tokenizer, model
+    except Exception as e:
+        st.error(f"Error loading model: {str(e)}")
+        st.stop()
 
 tokenizer, model = load_model()
 
