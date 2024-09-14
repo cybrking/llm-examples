@@ -1,39 +1,20 @@
 import streamlit as st
-import json
-import requests
-import os
-from dotenv import load_dotenv
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
 
-# Load environment variables
-load_dotenv()
-
-# Hugging Face API setup
-HUGGINGFACE_API_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
-API_URL = "https://api-inference.huggingface.co/models/deepseek-ai/deepseek-coder-6.7b-instruct"
-headers = {"Authorization": f"Bearer {HUGGINGFACE_API_TOKEN}"}
-
-def query_huggingface(payload):
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.HTTPError as http_err:
-        st.error(f"HTTP error occurred: {http_err}")
-        st.write(f"Response content: {response.content}")
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error querying Hugging Face API: {str(e)}")
-    return None
+# Load model directly
+model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
 
 def get_response(user_input):
-    prompt = f"""Human: In the context of AWS security groups, {user_input}"""
-    payload = {"inputs": prompt}
-    response = query_huggingface(payload)
-    if response:
-        return response[0]['generated_text']
-    return None
+    inputs = tokenizer(user_input, return_tensors="pt")
+    outputs = model.generate(**inputs)
+    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return response
 
 # Streamlit app
-st.title("Chat with Hugging Face Model")
+st.title("Chat with Meta-Llama Model")
 
 # File uploader
 uploaded_file = st.file_uploader("Upload a file", type=["txt", "py", "json", "md"])
