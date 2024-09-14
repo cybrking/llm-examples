@@ -1,20 +1,41 @@
 import streamlit as st
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from langchain import LLMChain, PromptTemplate
+from langchain.llms import HuggingFacePipeline
 import torch
 
 # Load model directly
-model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+model_name = "gpt2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name)
 
+# Create a pipeline for text generation
+def create_pipeline():
+    return HuggingFacePipeline(
+        pipeline=lambda prompt: model.generate(
+            **tokenizer(prompt, return_tensors="pt"),
+            max_length=50
+        )
+    )
+
+# Define a prompt template
+prompt_template = PromptTemplate(
+    input_variables=["user_input"],
+    template="Human: In the context of AWS security groups, {user_input}"
+)
+
+# Create an LLMChain
+llm_chain = LLMChain(
+    llm=create_pipeline(),
+    prompt=prompt_template
+)
+
 def get_response(user_input):
-    inputs = tokenizer(user_input, return_tensors="pt")
-    outputs = model.generate(**inputs)
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    response = llm_chain.run(user_input)
     return response
 
 # Streamlit app
-st.title("Chat with Meta-Llama Model")
+st.title("Chat with GPT-2 Model using LangChain")
 
 # File uploader
 uploaded_file = st.file_uploader("Upload a file", type=["txt", "py", "json", "md"])
