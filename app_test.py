@@ -1,21 +1,24 @@
-//@version=5
-strategy("Simulated TICK Reversal Strategy", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=1, initial_capital=10000)
+import streamlit as st
+from transformers import pipeline
 
-// Simulated TICK Index
-advancing = request.security("NYSE:ADV", "1", close)
-declining = request.security("NYSE:DEC", "1", close)
-tick = advancing - declining
+# Load a pre-trained model for conversational tasks
+generator = pipeline('conversational', model='microsoft/DialoGPT-medium')
 
-// TICK Levels
-tick_short_entry = 1000
-tick_long_entry = -1000
+def generate_response(prompt):
+    # Generate a response using the model
+    response = generator(prompt, max_length=100, num_return_sequences=1)
+    return response[0]['generated_text']
 
-// Entry Conditions
-short_condition = tick >= tick_short_entry
-long_condition = tick <= tick_long_entry
+def main():
+    st.title("Simple Chatbot using Hugging Face Model")
+    
+    # User input
+    user_input = st.text_input("You:", "")
+    
+    if user_input:
+        # Generate response
+        response = generate_response(user_input)
+        st.text_area("Chatbot:", value=response, height=200)
 
-// Take Profit and Stop Loss
-take_profit_percent = 0.50 / 100
-stop_loss_percent = 0.25 / 100
-
-//
+if __name__ == "__main__":
+    main()
