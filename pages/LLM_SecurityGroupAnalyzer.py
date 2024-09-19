@@ -2,7 +2,11 @@ import streamlit as st
 from transformers import pipeline
 
 # Load a pre-trained model for text generation
-generator = pipeline('text-generation', model='microsoft/DialoGPT-medium')
+@st.cache(allow_output_mutation=True)
+def load_model():
+    return pipeline('text-generation', model='microsoft/DialoGPT-small')
+
+generator = load_model()
 
 def generate_response(prompt):
     # Generate a response using the model
