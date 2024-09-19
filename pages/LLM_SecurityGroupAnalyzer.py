@@ -1,9 +1,8 @@
 import streamlit as st
 from transformers import pipeline
-from langchain.llms import HuggingFacePipeline
 
-# Load a pre-trained model for conversational tasks
-generator = pipeline('conversational', model='microsoft/DialoGPT-medium')
+# Load a pre-trained model for text generation
+generator = pipeline('text-generation', model='microsoft/DialoGPT-medium')
 
 def generate_response(prompt):
     # Generate a response using the model
