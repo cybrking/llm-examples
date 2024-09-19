@@ -3,3 +3,4 @@ torch
 streamlit
 langchain
 scikit-learn
+langchain_community
